@@ -29,13 +29,13 @@ impl SlideApp {
             self.set_status(format!("Still opening {name}"));
             return;
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {
             if let Err(e) = self.open_path(path) {
                 self.notify(e);
             }
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let (tx, rx) = std::sync::mpsc::channel();
             let p = path.to_string();

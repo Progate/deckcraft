@@ -622,7 +622,7 @@ impl Renderer {
         let mut ctx = RenderContext::new_with(
             w,
             h,
-            vello_cpu::RenderSettings { num_threads: if cfg!(target_arch = "wasm32") || filters { 0 } else { opts.threads }, ..Default::default() },
+            vello_cpu::RenderSettings { num_threads: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) || filters { 0 } else { opts.threads }, ..Default::default() },
         );
         if let Some(c) = opts.clear {
             ctx.set_paint(color(c, 1.0));

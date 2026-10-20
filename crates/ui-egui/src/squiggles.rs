@@ -65,11 +65,11 @@ struct Done {
 }
 
 fn now_ms() -> f64 {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         js_sys::Date::now()
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
         static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
         T0.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1000.0
@@ -271,7 +271,7 @@ impl Squiggles {
         if self.tx.is_some() || self.inline.is_some() {
             return true;
         }
-        if !cfg!(target_arch = "wasm32") && !self.force_inline {
+        if !cfg!(all(target_arch = "wasm32", target_os = "unknown")) && !self.force_inline {
             let (jtx, jrx) = channel();
             let (dtx, drx) = channel();
             if std::thread::Builder::new().name("spelling".into()).spawn(move || worker(jrx, dtx)).is_ok() {

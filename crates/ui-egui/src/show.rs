@@ -90,7 +90,7 @@ struct Prefetch {
 }
 
 fn render_threads() -> u16 {
-    if cfg!(target_arch = "wasm32") { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
+    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -137,7 +137,7 @@ fn hidden_on_entry(doc: &Presentation, idx: usize) -> Vec<ShapeId> {
 
 /// Start rendering slide `next`'s first frame on another thread. `None` on the web (no threads).
 fn start_prefetch(doc: &std::sync::Arc<Presentation>, next: usize, size: (u32, u32)) -> Option<Prefetch> {
-    if cfg!(target_arch = "wasm32") {
+    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
         return None;
     }
     let hidden = hidden_on_entry(doc, next);
@@ -406,7 +406,7 @@ fn quad_mesh(tex: Option<egui::TextureId>, rect: Rect, l: &Layer, color: Color32
 /// Render the backgrounds and contents of a transition's two slides into textures, once.
 fn part_textures(ctx: &egui::Context, doc: &Presentation, from: Option<usize>, to: usize, size: (u32, u32)) -> [Option<TextureHandle>; 4] {
     use deckcraft_render::SlidePart;
-    let threads = if cfg!(target_arch = "wasm32") { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
+    let threads = if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
     let opts = RenderOpts { scale: size.0 as f64 / doc.slide_size.width.max(1.0), size: Some(size), threads, ..Default::default() };
     let tex = |i: usize, part: SlidePart, name: &str| {
         let img = deckcraft_render::render_slide_part(doc, i, part, &opts);
@@ -770,7 +770,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         if let (Some((from, m)), Some(tr)) = (morph, show.trans.as_mut()) {
             let f = |id: ShapeId| ShapeState { opacity: m.opacity_of(id), ..Default::default() };
             let threads =
-                if cfg!(target_arch = "wasm32") { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
+                if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
             let opts =
                 RenderOpts { scale: size.0 as f64 / doc.slide_size.width.max(1.0), size: Some(size), state: Some(&f), threads, ..Default::default() };
             let text: Vec<deckcraft_render::TextMorph> = m

@@ -826,7 +826,7 @@ fn info(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
                 ui.ctx().copy_text(p.clone());
                 app.set_status("Copied the path");
             }
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             if let Some(dir) = std::path::Path::new(p).parent().and_then(|d| d.to_str())
                 && ui.button("Open file location").clicked()
             {

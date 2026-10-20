@@ -31,6 +31,6 @@ deckcraft-anim = { workspace = true }
 zip = { workspace = true }
 
 # The browser clock for comment timestamps (wasm has no std::time::SystemTime).
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 js-sys = "0.3"
 

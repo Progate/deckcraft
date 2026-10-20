@@ -1230,9 +1230,9 @@ fn font_add(_s: &mut Session, p: &Value) -> Result<Value> {
 /// Catalog the installed fonts again, so fonts installed while DeckCraft runs appear.
 fn font_rescan(_s: &mut Session, _p: &Value) -> Result<Value> {
     let db = deckcraft_fonts::FontDb::global();
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let faces = db.load_system_fonts();
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let faces = 0usize;
     Ok(json!({"faces": faces, "families": db.families().len()}))
 }

@@ -88,11 +88,11 @@ pub fn specs() -> Vec<CommandSpec> {
 
 /// Seconds since the Unix epoch: the system clock, or the browser's on wasm (which has no `SystemTime`).
 fn now_secs() -> u64 {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         (js_sys::Date::now() / 1000.0).max(0.0) as u64
     }
@@ -644,7 +644,7 @@ fn revised_bytes(p: &Value) -> Result<(String, Vec<u8>)> {
         let bytes = base64_decode(data).ok_or_else(|| bad("review.compare", "invalid base64 `data`"))?;
         return Ok((str_param(p, "name").unwrap_or("Revised").to_string(), bytes));
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     if let Some(path) = str_param(p, "path") {
         let bytes = crate::io::read_file(path).map_err(crate::EngineError::Other)?;
         return Ok((path.to_string(), bytes));

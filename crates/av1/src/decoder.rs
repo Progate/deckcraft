@@ -137,13 +137,13 @@ impl Output {
 }
 
 /// Frame worker threads taking jobs in submission order.
-#[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
 struct Workers {
     tx: Option<std::sync::mpsc::Sender<Box<FrameJob>>>,
     handles: Vec<std::thread::JoinHandle<()>>,
 }
 
-#[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
 impl Workers {
     fn new(n: usize, pool: &Pool, stats: &Arc<Mutex<DecodeStats>>) -> Option<Workers> {
         let (tx, rx) = std::sync::mpsc::channel::<Box<FrameJob>>();
@@ -172,7 +172,7 @@ impl Workers {
     }
 }
 
-#[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
 impl Drop for Workers {
     fn drop(&mut self) {
         self.tx.take();
@@ -201,7 +201,7 @@ pub struct Decoder {
     stats: Arc<Mutex<DecodeStats>>,
     threads: usize,
     pool: Pool,
-    #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
     workers: Option<Workers>,
     /// Frames submitted to the workers and not known to be finished (oldest first).
     in_flight: VecDeque<Arc<FrameSlot>>,
@@ -236,11 +236,11 @@ impl Decoder {
 }
 
 fn default_threads() -> usize {
-    #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
     {
         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(16)
     }
-    #[cfg(not(all(feature = "threads", not(target_arch = "wasm32"))))]
+    #[cfg(not(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown")))))]
     {
         1
     }
@@ -270,7 +270,7 @@ impl Decoder {
         let pool = Pool::new(threads);
         let stats = Arc::new(Mutex::new(DecodeStats::default()));
         let fthreads = if pool.is_parallel() { frame_threads(threads) } else { 1 };
-        #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
         let workers = if fthreads > 1 { Workers::new(fthreads, &pool, &stats) } else { None };
         Decoder {
             seq: None,
@@ -287,7 +287,7 @@ impl Decoder {
             stats,
             threads,
             pool,
-            #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+            #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
             workers,
             in_flight: VecDeque::new(),
             max_in_flight: fthreads + 2,
@@ -637,7 +637,7 @@ impl Decoder {
             }
         }
         let output = job.picture.clone().map(Output::Decoded);
-        #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
         if let Some(w) = &self.workers
             && let Some(tx) = &w.tx
         {

@@ -23,5 +23,5 @@ log = { workspace = true }
 kurbo = { workspace = true }
 skrifa = { workspace = true }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 vello_cpu = { workspace = true, features = ["multithreading"] }

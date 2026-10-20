@@ -241,7 +241,7 @@ fn anim_key(anim: Option<(&deckcraft_anim::Timeline, f64)>) -> u64 {
 }
 
 fn threads() -> u16 {
-    if cfg!(target_arch = "wasm32") { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
+    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
 }
 
 impl Textures {

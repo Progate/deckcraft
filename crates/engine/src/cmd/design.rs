@@ -149,12 +149,12 @@ fn browse_theme(s: &mut Session, p: &Value) -> Result<Value> {
     let bytes = if let Some(data) = str_param(p, "data") {
         super::base64_decode(data).ok_or_else(|| bad("design.browseTheme", "invalid base64 `data`"))?
     } else {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let path = str_param(p, "path").ok_or_else(|| bad("design.browseTheme", "give `path` or `data`"))?;
             crate::io::read_file(path).map_err(crate::EngineError::Other)?
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         return Err(bad("design.browseTheme", "give `data`"));
     };
     if !deckcraft_pptx::sniff(&bytes) {

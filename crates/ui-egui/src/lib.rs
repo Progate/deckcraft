@@ -619,12 +619,12 @@ impl SlideApp {
     /// block for seconds, so it must not repeat on every frame. A stale answer is harmless —
     /// opening still tries and reports, and a successful open re-probes.
     pub fn recent_exists(&mut self, path: &str) -> bool {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {
             let _ = path;
             true
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             if let Some(ok) = self.recent_checked.get(path) {
                 return *ok;
@@ -1599,6 +1599,15 @@ impl SlideApp {
                 Err(e) => self.set_status(e),
             }
         }
+        // WASI has real paths but egui's wasm `DroppedFile` exposes no `bytes()`: read the file.
+        #[cfg(all(target_arch = "wasm32", target_os = "wasi"))]
+        for f in ctx.input(|i| i.raw.dropped_files.clone()) {
+            let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped file".into());
+            match std::fs::read(f.path()) {
+                Ok(bytes) => self.open_or_insert_bytes(&name, &bytes),
+                Err(e) => self.set_status(e.to_string()),
+            }
+        }
         canvas::trackpad_twist(self, ctx);
     }
 
@@ -1999,12 +2008,12 @@ pub fn key_name(key: egui::Key) -> &'static str {
 }
 
 pub fn now_ms() -> f64 {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0)
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         js_now()
     }
@@ -2038,7 +2047,7 @@ fn web_image_files(
         .collect()
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn js_now() -> f64 {
     js_sys::Date::now()
 }

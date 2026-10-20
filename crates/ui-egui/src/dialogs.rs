@@ -233,7 +233,7 @@ fn pick_album_picture(app: &mut SlideApp) -> Option<Value> {
             }
         }
     } else {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             match std::fs::read(&path) {
                 Ok(bytes) => bytes,
@@ -243,7 +243,7 @@ fn pick_album_picture(app: &mut SlideApp) -> Option<Value> {
                 }
             }
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {
             app.set_status("The web build inserts album pictures from data passed to insert.photoAlbum");
             return None;

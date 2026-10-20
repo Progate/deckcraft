@@ -241,7 +241,7 @@ mod tests {
         assert!(db.fallback_for_filtered('A', fallback.id(), |f| f.family == accepted_family).is_none(), "the excluded face stays excluded");
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     #[test]
     fn filtered_fallback_loads_an_eligible_system_face_and_does_not_cache_policy_misses() {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(db.add_font(include_bytes!("../tests/fixtures/legacy-semibold.ttf").to_vec()), 1);
         check(&db);
         // …and found by the system font scan under its Windows name, then loaded.
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
             let db = FontDb::with_font_dirs(vec![dir.clone()]);
@@ -335,7 +335,7 @@ mod tests {
         assert!(loaded.outline(&face, face.glyph_for('A')).elements().is_empty());
         // The system font scan lists the Regular, which has outlines, and leaves out the Semibold
         // under both of its names.
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let dir = std::env::temp_dir().join(format!("deckcraft-fonts-outlines-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();

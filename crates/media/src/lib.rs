@@ -131,7 +131,7 @@ impl Container {
 }
 
 /// Worker threads are available (not on wasm32).
-pub(crate) const THREADS: bool = !cfg!(target_arch = "wasm32");
+pub(crate) const THREADS: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 
 #[cfg(test)]
 mod tests {

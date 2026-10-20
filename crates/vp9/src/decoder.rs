@@ -50,7 +50,7 @@ pub struct DecodeStats {
 enum Pending {
     Ready(Picture),
     /// Produced by a post job running on another thread.
-    #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
     Job(std::sync::mpsc::Receiver<Picture>),
     /// show_existing_frame: converted once the frame is complete.
     Existing(Arc<Frame>, i64, bool),
@@ -69,7 +69,7 @@ pub struct Decoder {
     bufs: Arc<Pools>,
     draft: bool,
     pending: VecDeque<Pending>,
-    #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
     jobs: VecDeque<std::thread::JoinHandle<()>>,
     #[cfg(feature = "threads")]
     pool: Option<rayon::ThreadPool>,
@@ -84,11 +84,11 @@ impl Default for Decoder {
 }
 
 fn default_threads() -> usize {
-    #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
     {
         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(16)
     }
-    #[cfg(not(all(feature = "threads", not(target_arch = "wasm32"))))]
+    #[cfg(not(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown")))))]
     {
         1
     }
@@ -115,7 +115,7 @@ impl Decoder {
     /// every picture is returned by the `decode` call that completes it).
     pub fn with_threads(threads: usize) -> Self {
         #[cfg(feature = "threads")]
-        let pool = if threads > 1 && cfg!(not(target_arch = "wasm32")) {
+        let pool = if threads > 1 && cfg!(not(all(target_arch = "wasm32", target_os = "unknown"))) {
             rayon::ThreadPoolBuilder::new().num_threads(threads).thread_name(|i| format!("vp9-{i}")).build().ok()
         } else {
             None
@@ -133,7 +133,7 @@ impl Decoder {
             bufs: Arc::default(),
             draft: false,
             pending: VecDeque::new(),
-            #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+            #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
             jobs: VecDeque::new(),
             #[cfg(feature = "threads")]
             pool,
@@ -178,7 +178,7 @@ impl Decoder {
     /// End of stream: every picture still in flight.
     pub fn flush(&mut self) -> Vec<Picture> {
         let out = self.drain(true);
-        #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
         for j in self.jobs.drain(..) {
             let _ = j.join();
         }
@@ -199,11 +199,11 @@ impl Decoder {
     }
 
     fn frame_threads(&self) -> bool {
-        #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
         {
             self.pool.is_some()
         }
-        #[cfg(not(all(feature = "threads", not(target_arch = "wasm32"))))]
+        #[cfg(not(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown")))))]
         {
             false
         }
@@ -222,7 +222,7 @@ impl Decoder {
                     Some(Pending::Ready(p)) => Some(p),
                     _ => None,
                 },
-                #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+                #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
                 Pending::Job(rx) => {
                     let p = if must {
                         rx.recv().ok()
@@ -482,7 +482,7 @@ impl Decoder {
     /// Run the post stage of a frame: on its own thread with frame threads (later frames wait
     /// per band for the samples they read), else right here.
     fn run_post(&mut self, job: PostJob) {
-        #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
         let job = if self.frame_threads() {
             // Bound the post stages in flight (each is one thread).
             while self.jobs.front().is_some_and(|j| j.is_finished()) {
@@ -567,7 +567,7 @@ impl Decoder {
 impl Drop for Decoder {
     fn drop(&mut self) {
         // Post jobs own everything they use; let them finish rather than leaving threads behind.
-        #[cfg(all(feature = "threads", not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "threads", not(all(target_arch = "wasm32", target_os = "unknown"))))]
         for j in self.jobs.drain(..) {
             let _ = j.join();
         }

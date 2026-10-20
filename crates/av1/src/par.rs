@@ -17,7 +17,7 @@ impl Pool {
     pub fn new(threads: usize) -> Pool {
         #[cfg(feature = "threads")]
         {
-            let pool = if threads > 1 && cfg!(not(target_arch = "wasm32")) {
+            let pool = if threads > 1 && cfg!(not(all(target_arch = "wasm32", target_os = "unknown"))) {
                 rayon::ThreadPoolBuilder::new().num_threads(threads).thread_name(|i| format!("av1-{i}")).build().ok().map(Arc::new)
             } else {
                 None

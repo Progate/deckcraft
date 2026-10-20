@@ -495,12 +495,12 @@ impl Player {
 
 /// Seconds on a monotonic clock where there is one (std's Instant panics on wasm32).
 fn web_now() -> f64 {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
         static T0: OnceLock<std::time::Instant> = OnceLock::new();
         T0.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         0.0
     }

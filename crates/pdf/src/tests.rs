@@ -24,8 +24,8 @@ fn opts(layout: PageLayout) -> PdfOptions {
     PdfOptions { layout, dpi: 48.0, ..Default::default() }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn exports_slides_notes_and_handouts() {
     let p = deck(5);
     for layout in [PageLayout::Slides, PageLayout::Notes, PageLayout::Handouts { per_page: 3 }, PageLayout::Handouts { per_page: 6 }] {
@@ -44,16 +44,16 @@ fn exports_slides_notes_and_handouts() {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn empty_range_is_an_error() {
     let p = deck(1);
     let o = PdfOptions { slides: Some(vec![7]), ..opts(PageLayout::Slides) };
     assert!(matches!(export(&p, &o), Err(PdfError::NoPages)));
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn hidden_slides_skipped_unless_asked() {
     let mut p = deck(2);
     Arc::make_mut(&mut p.slides[1]).hidden = true;
@@ -65,8 +65,8 @@ fn hidden_slides_skipped_unless_asked() {
     assert_eq!(hayro_syntax::Pdf::new(ranged.clone()).unwrap().pages().len(), 2);
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn handout_boxes_fit_the_paper() {
     for n in [1, 2, 3, 4, 6, 9] {
         let v = handout_boxes(n, (612.0, 792.0), 16.0 / 9.0);
@@ -83,8 +83,8 @@ fn handout_boxes_fit_the_paper() {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn metadata_retains_values_and_omits_blank_fields() {
     let mut p = deck(1);
     p.props.title = "  Deck title  ".into();
@@ -103,8 +103,8 @@ fn metadata_retains_values_and_omits_blank_fields() {
     assert!(pdf.metadata().author.is_none());
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn text_layer_links_and_bookmarks_survive_serialization() {
     use deckcraft_model::text::{Action, Hyperlink};
     use hayro_syntax::object::{Array, Dict};
@@ -156,8 +156,8 @@ fn font_without_head() -> Vec<u8> {
     bytes
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn unembeddable_font_returns_error_instead_of_a_pdf_missing_text() {
     use deckcraft_model::{Shape, ShapeId, Xfrm};
     let db = FontDb::global();
@@ -196,8 +196,8 @@ fn unembeddable_font_returns_error_instead_of_a_pdf_missing_text() {
     assert!(export(&deck(1), &opts(PageLayout::Slides)).is_ok());
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn supported_unicode_is_shaped_and_recovered_from_the_page_text_layer() {
     use deckcraft_model::{Shape, ShapeId, Xfrm};
     use hayro_syntax::content::ops::TypedInstruction;
@@ -434,8 +434,8 @@ fn master_text_wraps_and_keeps_mixed_formatting() {
 
 /// Slides that share their layout store their backdrop raster once in the exported PDF, over which
 /// each slide's own shapes draw as their own raster (#845).
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-#[cfg_attr(not(target_arch = "wasm32"), test)]
+#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn slides_share_one_backdrop_raster_and_keep_their_pixels() {
     use deckcraft_model::{Shape, ShapeId, Xfrm};
     use hayro_syntax::object::{Dict, Number, Stream};

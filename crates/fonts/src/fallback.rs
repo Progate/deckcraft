@@ -176,7 +176,7 @@ impl FontDb {
                     }
                 }
             }
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             if let Some(f) = self.system_face_for(key, cluster, &bundled) {
                 return f;
             }
@@ -208,7 +208,7 @@ impl FontDb {
 
     /// An installed (non-bundled) face covering the cluster, loading one from the system catalog
     /// if no loaded face does.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     fn system_face_for(&self, key: char, cluster: &[char], bundled: &[&str]) -> Option<Arc<FontFace>> {
         let pick = |db: &FontDb| {
             let faces = db.read_faces();
@@ -282,7 +282,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     #[test]
     fn falling_back_to_the_default_face_does_not_deadlock() {
         // An empty chain and a character no loaded face draws: the loaded faces are searched,
