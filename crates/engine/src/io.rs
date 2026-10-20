@@ -21,6 +21,22 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
 /// The bytes go to a temporary sibling first and are renamed over `path`, so a failed save never
 /// truncates the old file. The sibling is in the same folder, so it is inside the root whenever
 /// `path` is.
+///
+/// A value that distinguishes one process's temp files from another's. WASI has no pids, so a
+/// random per-process id (RandomState's seed is drawn per process) stands in for `std::process::id`.
+pub(crate) fn process_tag() -> u32 {
+    #[cfg(not(target_os = "wasi"))]
+    {
+        std::process::id()
+    }
+    #[cfg(target_os = "wasi")]
+    {
+        use std::hash::{BuildHasher, Hasher};
+        static TAG: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+        *TAG.get_or_init(|| std::collections::hash_map::RandomState::new().build_hasher().finish() as u32)
+    }
+}
+
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
@@ -33,7 +49,7 @@ pub fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {
     // temporary bytes.
     let mut attempts = 0;
     let (tmp, mut file) = loop {
-        let tmp = format!("{path}.{}.{}.saving", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed));
+        let tmp = format!("{path}.{}.{}.saving", process_tag(), COUNTER.fetch_add(1, Ordering::Relaxed));
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
             Ok(f) => break (tmp, f),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempts < 16 => attempts += 1,

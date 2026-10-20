@@ -44,7 +44,7 @@ pub fn instance_id() -> u64 {
     *ID.get_or_init(|| {
         use std::hash::{BuildHasher, Hasher};
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-        h.write_u32(std::process::id());
+        h.write_u32(crate::io::process_tag());
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
             h.write_u128(d.as_nanos());
