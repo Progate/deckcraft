@@ -6,6 +6,14 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+/// A string in the interface language ([`i18n::t`]): `tl!("Home")`.
+#[macro_export]
+macro_rules! tl {
+    ($s:expr) => {
+        $crate::i18n::t($s)
+    };
+}
+
 pub mod animtimeline;
 pub mod backstage;
 pub mod canvas;
@@ -15,6 +23,7 @@ pub mod dialogs;
 pub mod doc_window;
 pub mod eyedropper;
 pub mod fillui;
+pub mod i18n;
 pub mod icons;
 pub mod media;
 pub mod menus;
@@ -492,6 +501,8 @@ pub struct SlideApp {
     pub(crate) notes_buf: (u64, usize, notes::Draft),
     /// Faces borrowed from the font database for text the interface fonts can't draw (#101).
     pub ui_fonts: uifonts::UiFonts,
+    /// The interface language's catalog was handed to [`Self::ui_fonts`] (once per process).
+    lang_fonts_noted: bool,
     /// Thumbnail pane drag (slide index, current drop index).
     pub(crate) thumb_drag: Option<(usize, usize)>,
     /// Selection pane: folded groups, renaming, drag and drop.
@@ -572,6 +583,7 @@ impl SlideApp {
             quit_confirmed: false,
             notes_buf: (0, usize::MAX, notes::Draft::default()),
             ui_fonts: uifonts::UiFonts::default(),
+            lang_fonts_noted: false,
             thumb_drag: None,
             selpane: selpane::State::default(),
             align_to: None,
@@ -1538,6 +1550,18 @@ impl SlideApp {
 
     /// Per-frame logic before layout: styles, control requests, screenshots, shortcuts.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        // The interface language follows the environment (DECKCRAFT_LANGUAGE, LC_ALL, LC_MESSAGES,
+        // LANG). Empty placeholders on the slides show their prompt in it too, and the catalog's
+        // characters get interface faces before the first frame that draws them.
+        let lang = i18n::system_lang();
+        i18n::set_current(lang);
+        if !self.lang_fonts_noted {
+            self.lang_fonts_noted = true;
+            if lang != i18n::Lang::EN {
+                deckcraft_render::set_prompt_text(i18n::prompt);
+                self.ui_fonts.note(ctx, lang.catalog_text());
+            }
+        }
         let scale = self.ui.ui_scale.clamp(0.5, 3.0);
         if (ctx.zoom_factor() - scale).abs() > 1e-3 {
             ctx.set_zoom_factor(scale);
@@ -1828,7 +1852,12 @@ impl SlideApp {
         ribbon::title_bar(self, ui);
         if self.backstage.is_none() && self.session.active().is_some() {
             ribbon::show(self, ui);
+            ribbon::lock_bar(self, ui);
             status::status_bar(self, ui);
+        }
+        // A presentation opened with a password to modify asks for it (or Read Only) first.
+        if self.dialog.is_none() && self.session.active().is_some_and(|d| d.lock == Some(deckcraft_engine::DocLock::Password)) {
+            self.dialog = Some(dialogs::Dialog::new("unlockPassword"));
         }
         let now = ui.input(|i| i.time);
         if self.tick_anim_preview(now) {

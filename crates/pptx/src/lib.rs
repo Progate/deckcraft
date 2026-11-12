@@ -13,6 +13,7 @@ mod dgm;
 mod maps;
 mod opc;
 mod png;
+mod protect;
 pub(crate) mod read;
 mod tables;
 mod write;

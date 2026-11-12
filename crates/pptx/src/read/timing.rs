@@ -184,3 +184,54 @@ pub fn animations(imp: &mut Imp, part: &Part, ctx: &IdCtx, timing: &El, _shapes:
     }
     out.into_iter().map(|(a, _, _)| a).collect()
 }
+
+/// The playback options PowerPoint keeps in `p:timing` (`p:video`/`p:audio` > `p:cMediaNode`),
+/// onto the slide's clips: volume and mute, Hide During Show (`showWhenStopped="0"`), Play Across
+/// Slides (`numSld`), Loop until Stopped (`repeatCount="indefinite"`), Rewind after Playing
+/// (`fill="remove"`) and Play Full Screen (`fullScrn` on `p:video`). "Start: Automatically" is a
+/// Play effect before the first click; it becomes the clip's `autoplay` flag and leaves the
+/// animation list, so a save writes it back once (see `write::timing::timing`).
+pub fn media_options(ctx: &IdCtx, timing: &El, shapes: &mut [Shape], anims: &mut Vec<Animation>) {
+    let Some(tn) = timing.child("tnLst") else { return };
+    let mut nodes = vec![];
+    tn.find_all("video", &mut nodes);
+    let videos = nodes.len();
+    tn.find_all("audio", &mut nodes);
+    for (i, node) in nodes.into_iter().enumerate() {
+        let Some(cm) = node.child("cMediaNode") else { continue };
+        let Some(id) = cm.path(&["tgtEl", "spTgt"]).and_then(|t| t.u32("spid")).and_then(|f| ctx.lookup(f)) else { continue };
+        let Some(sh) = deckcraft_model::find_shape_mut(shapes, id) else { continue };
+        let deckcraft_model::ShapeKind::Media(m) = &mut sh.kind else { continue };
+        let ctn = cm.child("cTn");
+        m.volume = cm.f64("vol").map_or(1.0, |v| (v / 100_000.0).clamp(0.0, 1.0));
+        if cm.bool("mute") == Some(true) {
+            m.volume = 0.0;
+        }
+        m.hide_while_not_playing = cm.bool("showWhenStopped") == Some(false);
+        m.play_across_slides = cm.u32("numSld").is_some_and(|n| n > 1);
+        m.loop_play = ctn.and_then(|c| c.attr("repeatCount")) == Some("indefinite");
+        m.rewind = ctn.and_then(|c| c.attr("fill")) == Some("remove");
+        m.full_screen = i < videos && node.bool("fullScrn") == Some(true);
+    }
+    // Start: Automatically.
+    let mut auto = vec![];
+    for (i, a) in anims.iter().enumerate() {
+        if a.trigger.is_some() {
+            continue;
+        }
+        if a.start == AnimStart::OnClick {
+            break;
+        }
+        if a.class == AnimClass::Media && a.effect == "play" {
+            auto.push(i);
+        }
+    }
+    for i in auto.into_iter().rev() {
+        let shape = anims.get(i).map(|a| a.shape);
+        let Some(sh) = shape.and_then(|id| deckcraft_model::find_shape_mut(shapes, id)) else { continue };
+        if let deckcraft_model::ShapeKind::Media(m) = &mut sh.kind {
+            m.autoplay = true;
+            anims.remove(i);
+        }
+    }
+}

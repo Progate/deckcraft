@@ -182,8 +182,10 @@ pub fn add_opened(s: &mut Session, name: &str, path: Option<String>, p: Presenta
     let title = std::path::Path::new(name).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string());
     crate::fonts::install_embedded_fonts(&p);
     let missing_fonts = crate::fonts::missing_fonts(&p);
+    let lock = crate::DocLock::on_open(&p);
     let mut st = DocState::new(p, path, title);
     st.missing_fonts = missing_fonts;
+    st.lock = lock;
     s.add_document(st)
 }
 
@@ -431,9 +433,19 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
         return Ok(json!({"needsPath": true}));
     };
     let format = str_param(p, "format").unwrap_or(format_for_path(&path));
-    let bytes = save_bytes(&s.doc()?.doc, format)?;
+    // Opened read-only past a password to modify: the file itself stays as it was.
+    let st = s.doc()?;
+    if st.lock == Some(crate::DocLock::ReadOnly) && st.path.as_deref() == Some(path.as_str()) {
+        return Err(EngineError::Other("This presentation is read-only. Save a copy with Save As to keep your changes.".into()));
+    }
+    let bytes = save_bytes(&st.doc, format)?;
     write_file(&path, &bytes)?;
+    let was_read_only = s.doc()?.lock == Some(crate::DocLock::ReadOnly);
     mark_saved(s, Some(path.clone()))?;
+    if was_read_only {
+        // The copy saved under a new name is the one being edited now.
+        s.doc_mut()?.lock = None;
+    }
     Ok(json!({"path": path, "bytes": bytes.len()}))
 }
 

@@ -222,6 +222,38 @@ pub struct DocState {
     pub composition: Option<Composition>,
     /// Review › Compare in progress: the revised copy.
     pub compare: Option<compare::Compare>,
+    /// Why the presentation can't be edited, if it can't ([`DocLock`]).
+    pub lock: Option<DocLock>,
+}
+
+/// A presentation opened protected (File › Info › Protect Presentation).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DocLock {
+    /// Marked as Final: read-only until Edit Anyway (`file.editAnyway`).
+    Final,
+    /// It has a password to modify and none was given yet: nothing can change until
+    /// `file.unlock` gets the password or chooses Read Only.
+    Password,
+    /// Opened Read Only past the password: editing works, saving over the file does not
+    /// (Save As a new file instead).
+    ReadOnly,
+}
+
+impl DocLock {
+    /// The lock a freshly opened presentation starts with.
+    pub fn on_open(doc: &Presentation) -> Option<DocLock> {
+        if doc.modify_verifier.is_some() {
+            Some(DocLock::Password)
+        } else if doc.props.mark_as_final {
+            Some(DocLock::Final)
+        } else {
+            None
+        }
+    }
+    /// Does this lock stop edits?
+    pub fn blocks_edits(self) -> bool {
+        matches!(self, DocLock::Final | DocLock::Password)
+    }
 }
 
 static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -249,6 +281,7 @@ impl DocState {
             missing_fonts: Vec::new(),
             composition: None,
             compare: None,
+            lock: None,
         }
     }
     pub fn is_dirty(&self) -> bool {
@@ -644,6 +677,12 @@ impl Session {
     /// Mutate the active presentation (copy-on-write) and bump the revision.
     pub fn edit<T>(&mut self, f: impl FnOnce(&mut Presentation, &mut Selection) -> Result<T>) -> Result<T> {
         let st = self.doc_mut()?;
+        // A presentation marked final, or waiting for its password to modify, is read-only.
+        match st.lock {
+            Some(DocLock::Final) => return Err(EngineError::Other(cmd::protect::FINAL_MESSAGE.into())),
+            Some(DocLock::Password) => return Err(EngineError::Other(cmd::protect::PASSWORD_MESSAGE.into())),
+            _ => {}
+        }
         let mut doc = (*st.doc).clone();
         let mut sel = st.selection.clone();
         let r = f(&mut doc, &mut sel)?;

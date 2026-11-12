@@ -677,6 +677,8 @@ pub fn import_checked(bytes: &[u8]) -> Result<(Presentation, Vec<String>), PptxE
     }
 
     p.kept_parts = kept_parts(&pkg, &pres_path);
+    p.props.mark_as_final = crate::protect::take_mark_as_final(&mut p.kept_parts);
+    p.modify_verifier = pres_el.child("modifyVerifier").and_then(crate::protect::read_modify_verifier);
 
     inherit_placeholder_geometry(&mut p);
     default_text_anchor(&mut p);
@@ -1120,6 +1122,7 @@ fn read_slide(imp: &mut Imp, part: &Part, doc: &Doc, id: SlideId, layout: Layout
     }
     if let Some(t) = root.child("timing") {
         s.animations = timing::animations(imp, part, &ctx, t, &s.shapes);
+        timing::media_options(&ctx, t, &mut s.shapes, &mut s.animations);
     }
     if let Some(ext) = root.child("extLst").filter(|e| !has_rel_refs(e)) {
         s.raw_ext = Some(ext.elements().map(|e| part.keep(e)).collect());

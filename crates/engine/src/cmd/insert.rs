@@ -118,10 +118,11 @@ pub fn specs() -> Vec<CommandSpec> {
             "Chart Elements",
             ["Chart Design", "Chart Layouts"],
             None,
-            "{title?: string|null, legend?: b|t|l|r|null, dataLabels?: bool, gridlines?: bool, palette?, binCount?: n|null, binSize?: n|null, subtotals?: [point index], quartiles?: exclusive|inclusive, upDownBars?: bool, id?}",
+            "{title?: string|null, legend?: b|t|l|r|null, dataLabels?: bool, gridlines?: bool, minorGridlines?: bool, xAxisTitle?: string|null, yAxisTitle?: string|null, palette?, binCount?: n|null, binSize?: n|null, subtotals?: [point index], quartiles?: exclusive|inclusive, upDownBars?: bool, id?}",
             has_selection,
             chart_options
         ),
+        cmd!("chart.quickLayout", "Quick Layout", ["Chart Design", "Chart Layouts"], None, "{layout: 1-6, id?}", has_selection, chart_quick_layout),
         cmd!(
             "insert.smartArt",
             "SmartArt",
@@ -1814,9 +1815,49 @@ fn chart_options(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(v) = bool_param(p, "gridlines") {
             c.gridlines = v;
         }
+        if let Some(v) = bool_param(p, "minorGridlines") {
+            c.minor_gridlines = v;
+        }
+        // Axis titles: a string shows the title (PowerPoint's placeholder text when empty), null hides it.
+        if let Some(t) = p.get("xAxisTitle") {
+            c.axis_titles.0 = t.as_str().map(|s| if s.is_empty() { "Axis Title".to_string() } else { s.to_string() });
+        }
+        if let Some(t) = p.get("yAxisTitle") {
+            c.axis_titles.1 = t.as_str().map(|s| if s.is_empty() { "Axis Title".to_string() } else { s.to_string() });
+        }
         if let Some(v) = str_param(p, "palette") {
             c.palette = v.to_string();
         }
+        c.raw = None;
+        Ok(())
+    })
+}
+
+/// The chart elements each Quick Layout turns on, as `(title, legend, data labels, gridlines,
+/// axis titles)`. They follow the element sets of PowerPoint's first Quick Layouts for column
+/// charts (the gallery's pictures are not copied); the layout number is the gallery position.
+pub const QUICK_LAYOUTS: [(bool, Option<&str>, bool, bool, bool); 6] = [
+    (true, Some("r"), false, true, false),
+    (true, Some("t"), true, false, false),
+    (true, Some("b"), false, true, false),
+    (false, Some("b"), true, false, false),
+    (true, None, false, true, true),
+    (true, None, false, true, true),
+];
+
+fn chart_quick_layout(s: &mut Session, p: &Value) -> Result<Value> {
+    let n = p.get("layout").and_then(Value::as_u64).unwrap_or(0);
+    let Some(&(title, legend, labels, grid, axis_titles)) = n.checked_sub(1).and_then(|i| QUICK_LAYOUTS.get(i as usize)) else {
+        return Err(bad("chart.quickLayout", format!("layout must be 1 to {}", QUICK_LAYOUTS.len())));
+    };
+    with_chart(s, p, "chart.quickLayout", |c| {
+        c.title = if title { Some(c.title.clone().unwrap_or_else(|| "Chart Title".into())) } else { None };
+        c.legend = legend.map(String::from);
+        c.data_labels = labels;
+        c.gridlines = grid;
+        c.minor_gridlines = false;
+        let keep = |t: &Option<String>| Some(t.clone().unwrap_or_else(|| "Axis Title".into()));
+        c.axis_titles = if axis_titles { (keep(&c.axis_titles.0), keep(&c.axis_titles.1)) } else { (None, None) };
         c.raw = None;
         Ok(())
     })

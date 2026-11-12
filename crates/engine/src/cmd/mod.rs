@@ -17,6 +17,7 @@ pub mod media;
 pub mod merge;
 pub mod picture_style;
 pub mod points;
+pub mod protect;
 pub mod recolor;
 pub mod reuse;
 pub mod review;
@@ -163,6 +164,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
     SPECS.get_or_init(|| {
         let mut v = Vec::new();
         v.extend(file::specs());
+        v.extend(protect::specs());
         v.extend(edit::specs());
         v.extend(slide::specs());
         v.extend(reuse::specs());
