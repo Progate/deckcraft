@@ -1334,6 +1334,45 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         "generalOptions" => general_options_dialog(app, ui, d),
         "unlockPassword" => unlock_dialog(app, ui, d),
         "headerFooter" => {
+            // Two tabs, as in PowerPoint: Slide, and Notes and Handouts.
+            let tab = d.get("tab", "slide");
+            ui.horizontal(|ui| {
+                if ui.selectable_label(tab == "slide", tl!("Slide")).clicked() {
+                    d.fields.insert("tab".into(), "slide".into());
+                }
+                if ui.selectable_label(tab == "notes", tl!("Notes and Handouts")).clicked() {
+                    d.fields.insert("tab".into(), "notes".into());
+                }
+            });
+            ui.separator();
+            if tab == "notes" {
+                let master = app.session.active().and_then(|s| s.doc.notes_master.clone());
+                let has = |k: deckcraft_model::PhType| master.as_ref().is_some_and(|m| m.shapes.iter().any(|x| x.ph_type() == Some(k)));
+                let text_of = |k: deckcraft_model::PhType| {
+                    master
+                        .as_ref()
+                        .and_then(|m| m.shapes.iter().find(|x| x.ph_type() == Some(k)))
+                        .and_then(|x| x.text.as_ref())
+                        .map(|t| t.text())
+                        .unwrap_or_default()
+                };
+                let date = check(ui, d, "Date and time", "n_date", has(deckcraft_model::PhType::Date));
+                field(ui, d, "  Fixed date (empty = update automatically):", "n_dateText", "");
+                let header = check(ui, d, "Header", "n_header", has(deckcraft_model::PhType::Header));
+                field(ui, d, "  Header text:", "n_headerText", &text_of(deckcraft_model::PhType::Header));
+                let page = check(ui, d, "Page number", "n_page", has(deckcraft_model::PhType::SlideNum));
+                let foot = check(ui, d, "Footer", "n_footer", has(deckcraft_model::PhType::Footer));
+                field(ui, d, "  Footer text:", "n_footerText", &text_of(deckcraft_model::PhType::Footer));
+                let (ok, cancel) = buttons(ui, "Apply to All");
+                if ok {
+                    run(
+                        app,
+                        "design.notesHeaderFooter",
+                        json!({"date": date, "dateText": d.get("n_dateText", ""), "header": header, "headerText": d.get("n_headerText", ""), "footer": foot, "footerText": d.get("n_footerText", ""), "pageNumber": page}),
+                    );
+                }
+                return ok || cancel;
+            }
             let hf = app.session.active().map(|s| s.doc.header_footer.clone()).unwrap_or_default();
             let date = check(ui, d, "Date and time", "date", hf.date);
             field(ui, d, "  Fixed date (empty = update automatically):", "dateText", &hf.date_text);
@@ -2410,7 +2449,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     }
                 }
             });
-            let mut v = d.get("text", "Plan\nBuild\nLaunch");
+            let mut v = d.get("text", tl!("Plan\nBuild\nLaunch"));
             ui.add(egui::TextEdit::multiline(&mut v).desired_rows(5).desired_width(320.0));
             d.fields.insert("text".into(), v.clone());
             let (ok, cancel) = buttons(ui, "Insert");
@@ -3327,17 +3366,17 @@ fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     ui.label(egui::RichText::new(tl!("Indentation")).strong());
     ui.horizontal(|ui| {
         let _ = labeled_text(ui, d, "Before text", "before", 64.0);
-        ui.label(tl!("in"));
+        ui.label(crate::units::name());
         ui.add_space(12.0);
         let _ = labeled_text(ui, d, "After text", "after", 64.0);
-        ui.label(tl!("in"));
+        ui.label(crate::units::name());
     });
     ui.horizontal(|ui| {
         ui.add_sized(vec2(110.0, 20.0), egui::Label::new(tl!("Special")));
         choice(ui, d, "paragraph_special", "special", &[("none", "None"), ("first", "First line"), ("hanging", "Hanging")]);
         ui.add_space(8.0);
         let _ = labeled_text(ui, d, "By", "by", 64.0);
-        ui.label(tl!("in"));
+        ui.label(crate::units::name());
     });
     ui.label(egui::RichText::new(tl!("Spacing")).strong());
     ui.horizontal(|ui| {

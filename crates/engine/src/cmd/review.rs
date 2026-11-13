@@ -22,6 +22,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.options", "Options", ["File"], None, "{userName?: string (comment author, File › Options › General)} → {userName}", always, options),
         cmd!("comment.reply", "Reply", ["Comments"], None, "{index, text}", has_slide, reply),
         cmd!("comment.delete", "Delete Comment", ["Review", "Comments"], None, "{index? | all?: bool}", has_slide, delete),
+        cmd!("comment.deleteReply", "Delete Reply", ["Comments"], None, "{index, reply: index}", has_slide, delete_reply),
         cmd!("comment.resolve", "Resolve Thread", ["Comments"], None, "{index, resolved?: bool}", has_slide, resolve),
         cmd!(query "comment.list", "Comments", [], None, "{slide?} → comments", has_slide, list),
         cmd!(
@@ -147,6 +148,22 @@ fn reply(s: &mut Session, p: &Value) -> Result<Value> {
         let sl = Arc::make_mut(doc.slides.get_mut(sel.slide).ok_or_else(|| bad("comment.reply", "no slide"))?);
         let c = sl.comments.get_mut(i).ok_or_else(|| bad("comment.reply", "no such comment"))?;
         c.replies.push(Comment { author, text, date: now(), ..Default::default() });
+        Ok(())
+    })?;
+    ok()
+}
+
+/// Delete one reply of comment `index` on the current slide (the thread stays).
+fn delete_reply(s: &mut Session, p: &Value) -> Result<Value> {
+    let i = usize_param(p, "index").ok_or_else(|| bad("comment.deleteReply", "missing `index`"))?;
+    let k = usize_param(p, "reply").ok_or_else(|| bad("comment.deleteReply", "missing `reply`"))?;
+    s.edit(|doc, sel| {
+        let sl = Arc::make_mut(doc.slides.get_mut(sel.slide).ok_or_else(|| bad("comment.deleteReply", "no slide"))?);
+        let c = sl.comments.get_mut(i).ok_or_else(|| bad("comment.deleteReply", "no such comment"))?;
+        if k >= c.replies.len() {
+            return Err(bad("comment.deleteReply", "no such reply"));
+        }
+        c.replies.remove(k);
         Ok(())
     })?;
     ok()
@@ -287,7 +304,11 @@ fn accessibility(s: &mut Session, _p: &Value) -> Result<Value> {
                         continue;
                     }
                     let fg = deckcraft_model::resolve::text_color(&ctx, &rp);
-                    if fg.contrast(bg) < 3.0 {
+                    // WCAG 2 AA: 4.5:1 for normal text, 3:1 for large text (18 pt, or 14 pt bold).
+                    let size = rp.size.unwrap_or(18.0);
+                    let large = size >= 18.0 || (rp.bold == Some(true) && size >= 14.0);
+                    let need = if large { 3.0 } else { 4.5 };
+                    if fg.contrast(bg) < need {
                         out.push(json!({"slide": i, "shape": sh.id, "name": sh.name, "issue": format!("Hard-to-read text contrast ({:.1}:1)", fg.contrast(bg))}));
                     }
                 }

@@ -11,6 +11,60 @@ use crate::ribbon::{cref_param, paint_anim_tile};
 use crate::theme::{self, Tokens};
 use crate::{SlideApp, widgets};
 
+/// Home › New Slide › Reuse Slides: the chosen presentation's slides, each inserted after the
+/// current slide with a click (PowerPoint's Reuse Slides pane), with Keep source formatting.
+fn reuse_slides(app: &mut SlideApp, ui: &mut Ui) {
+    let Some((path, doc)) = app.reuse.clone() else {
+        ui.label(tl!("Choose a presentation to reuse slides from."));
+        if ui.button(tl!("Browse…")).clicked() {
+            let keep = app.reuse_keep;
+            let _ = app.run("app.reuseSlidesDialog", json!({"keepFormatting": keep}));
+        }
+        return;
+    };
+    let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    ui.label(egui::RichText::new(name).strong());
+    ui.checkbox(&mut app.reuse_keep, tl!("Keep source formatting"));
+    if ui.button(tl!("Insert All")).clicked() {
+        let _ = app.run("slide.reuse", json!({"path": path, "keepFormatting": app.reuse_keep}));
+    }
+    ui.add_space(6.0);
+    let w = 200.0f32;
+    let h = (w as f64 * doc.slide_size.height / doc.slide_size.width.max(1.0)) as f32;
+    for (i, sl) in doc.slides.iter().enumerate() {
+        let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
+        // Each thumbnail is drawn once and kept (the pane redraws every frame).
+        let key = egui::Id::new(("reuse-thumb", &path, i));
+        let tex = match ui.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
+            Some(t) => t,
+            None => {
+                let img = deckcraft_render::render_slide(
+                    &doc,
+                    i,
+                    &deckcraft_render::RenderOpts { scale: f64::from(w) * 1.5 / doc.slide_size.width.max(1.0), ..Default::default() },
+                );
+                let t =
+                    ui.ctx().load_texture(format!("reuse-{path}-{i}"), crate::textures::to_color_image(&img, false), egui::TextureOptions::LINEAR);
+                ui.data_mut(|d| d.insert_temp(key, t.clone()));
+                t
+            }
+        };
+        ui.painter().image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+        let t = Tokens::get(ui.ctx());
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::ZERO,
+            Stroke::new(if resp.hovered() { 2.0 } else { 1.0 }, if resp.hovered() { t.accent } else { t.border }),
+            egui::StrokeKind::Outside,
+        );
+        ui.label(format!("{}. {}", i + 1, sl.title().lines().next().unwrap_or("")));
+        if resp.on_hover_text(tl!("Insert this slide")).clicked() {
+            let _ = app.run("slide.reuse", json!({"path": path, "slides": [i], "keepFormatting": app.reuse_keep}));
+        }
+        ui.add_space(6.0);
+    }
+}
+
 /// Review › Reading Order (Accessibility): the slide's objects in the order a screen reader
 /// reads them, which is their order on the slide (`spTree`). Moving one earlier sends it
 /// backward one step; later brings it forward.
@@ -71,6 +125,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "thesaurus" => "Thesaurus",
                 "revisions" => "Revisions",
                 "readingOrder" => "Reading Order",
+                "reuse" => "Reuse Slides",
                 _ => "Pane",
             };
             ui.horizontal(|ui| {
@@ -98,6 +153,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "thesaurus" => thesaurus(app, ui),
                 "revisions" => revisions(app, ui),
                 "readingOrder" => reading_order(app, ui),
+                "reuse" => reuse_slides(app, ui),
                 _ => {}
             });
         });
@@ -1324,8 +1380,14 @@ fn comment_card(app: &mut SlideApp, ui: &mut Ui, slide: usize, index: usize, c: 
             if body.clicked() {
                 focus_comment(app, slide, index);
             }
-            for r in &c.replies {
-                ui.label(egui::RichText::new(crate::i18n::t(&(format!("↳ {}: {}", r.author, r.text)))).color(t.text_dim));
+            for (k, r) in c.replies.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(format!("↳ {}: {}", r.author, r.text)).color(t.text_dim));
+                    if ui.small_button("×").on_hover_text(tl!("Delete Reply")).clicked() {
+                        focus_comment(app, slide, index);
+                        run(app, "comment.deleteReply", json!({"index": index, "reply": k}));
+                    }
+                });
             }
             ui.horizontal(|ui| {
                 let id = ui.id().with(("reply", slide, index));

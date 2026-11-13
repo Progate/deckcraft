@@ -95,6 +95,55 @@ fn templates(_s: &mut Session, _p: &Value) -> Result<Value> {
     }))
 }
 
+/// Layout names and master sample text as PowerPoint's Japanese version writes them into a new
+/// presentation (English otherwise). Only new presentations: opened files keep their names.
+const JA_NAMES: [(&str, &str); 14] = [
+    ("Title Slide", "タイトル スライド"),
+    ("Title and Content", "タイトルとコンテンツ"),
+    ("Section Header", "セクション見出し"),
+    ("Two Content", "2 つのコンテンツ"),
+    ("Comparison", "比較"),
+    ("Title Only", "タイトルのみ"),
+    ("Blank", "白紙"),
+    ("Content with Caption", "タイトル付きのコンテンツ"),
+    ("Picture with Caption", "タイトル付きの図"),
+    ("Title and Vertical Text", "タイトルと縦書きテキスト"),
+    ("Vertical Title and Text", "縦書きタイトルと縦書きテキスト"),
+    ("Click to edit Master title style", "マスター タイトルの書式設定"),
+    ("Click to edit Master text styles", "マスター テキストの書式設定"),
+    ("Click to edit Master subtitle style", "マスター サブタイトルの書式設定"),
+];
+
+pub fn localize_new(doc: &mut Presentation) {
+    if crate::localized("en", "ja") != "ja" {
+        return;
+    }
+    let ja = |s: &str| JA_NAMES.iter().find(|(en, _)| *en == s).map(|(_, j)| j.to_string());
+    let fix_text = |shapes: &mut [deckcraft_model::Shape]| {
+        for sh in shapes {
+            if let Some(t) = sh.text.as_mut() {
+                for p in &mut t.paragraphs {
+                    for r in &mut p.runs {
+                        if let Some(j) = ja(&r.text) {
+                            r.text = j;
+                        }
+                    }
+                }
+            }
+        }
+    };
+    for m in &mut doc.masters {
+        let m = std::sync::Arc::make_mut(m);
+        fix_text(&mut m.shapes);
+        for l in &mut m.layouts {
+            if let Some(j) = ja(&l.name) {
+                l.name = j;
+            }
+            fix_text(&mut l.shapes);
+        }
+    }
+}
+
 fn new(s: &mut Session, p: &Value) -> Result<Value> {
     let template = str_param(p, "template").filter(|t| !t.is_empty());
     let theme_name = str_param(p, "theme").filter(|t| !t.is_empty());
@@ -113,6 +162,8 @@ fn new(s: &mut Session, p: &Value) -> Result<Value> {
         let theme = theme_name.and_then(theme_named).unwrap_or_default();
         (defaults::blank_presentation(size, theme, !bool_or(p, "blank", false)), None)
     };
+    let mut doc = doc;
+    localize_new(&mut doc);
     let slides = doc.slides.len();
     let title = s.next_untitled();
     let i = s.add_document(DocState::new(doc, None, title));

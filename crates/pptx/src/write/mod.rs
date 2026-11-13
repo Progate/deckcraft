@@ -377,7 +377,7 @@ fn slide_ext_list(w: &mut W, raw: Option<&str>, comment_rel: Option<&str>) {
     w.close("p:extLst");
 }
 
-fn notes_master_shapes(size: deckcraft_geom::Size) -> Vec<Shape> {
+pub fn notes_master_shapes(size: deckcraft_geom::Size) -> Vec<Shape> {
     let (w, h) = (size.width, size.height);
     let mk = |id: u32, name: &str, kind: PhType, idx: u32, x: f64, y: f64, ww: f64, hh: f64| Shape {
         id: ShapeId(id),

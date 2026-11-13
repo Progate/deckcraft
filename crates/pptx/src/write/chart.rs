@@ -167,6 +167,14 @@ fn series(w: &mut W, c: &Chart, s: &Series, i: usize, kind: ChartType, g: Group)
         w.empty0("a:noFill");
         w.close("a:ln");
         w.close("c:spPr");
+    } else if matches!(g, Group::Line | Group::Radar) && s.line.is_none() && matches!(s.fill, Some(Fill::Solid { .. })) {
+        // A line series' colour is its line (`a:ln`), as PowerPoint reads it; a fill alone would
+        // leave the line in the default colour.
+        let line = s.fill.as_ref().and_then(|f| match f {
+            Fill::Solid { color } => Some(deckcraft_model::Line::solid(color.clone(), 2.25)),
+            _ => None,
+        });
+        sp_pr(w, None, line.as_ref());
     } else {
         sp_pr(w, s.fill.as_ref(), s.line.as_ref());
     }

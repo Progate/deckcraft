@@ -536,7 +536,7 @@ fn demote_slide(app: &mut SlideApp, i: usize, title: &str) {
         lines.extend(own.into_iter().map(|l| format!("\t{l}")));
     }
     let _ = app.run("slide.go", json!({"index": i - 1}));
-    let _ = app.run("text.set", json!({"id": prev_body, "text": lines.join("\n")}));
+    let _ = app.run("text.set", json!({"id": prev_body, "text": lines.join("\n"), "outline": true}));
     let _ = app.run("slide.delete", json!({"index": i}));
 }
 
@@ -561,6 +561,15 @@ fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deck
             let _ = app.run("slide.go", json!({"index": i}));
         }
         let enter = resp.lost_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+        // Enter splits the title at the caret, as PowerPoint's outline does: the text after the
+        // caret becomes the title of a new slide right after this one (empty at the end).
+        let mut rest = String::new();
+        if enter {
+            let caret =
+                egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range()).map_or(v.chars().count(), |r| r.primary.index.0);
+            let at = v.char_indices().nth(caret).map_or(v.len(), |(b, _)| b);
+            rest = v.split_off(at);
+        }
         if (resp.lost_focus() || demote)
             && v != cur_title
             && let Some(tid) = title_shape
@@ -571,7 +580,7 @@ fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deck
             demote_slide(app, i, &v);
         } else if enter {
             // Enter after a title: a new slide below, its title ready to type.
-            if let Ok(r) = app.session.execute("slide.new", &json!({"at": i + 1, "layout": "titleAndContent"})) {
+            if let Ok(r) = app.session.execute("slide.new", &json!({"at": i + 1, "layout": "titleAndContent", "title": rest})) {
                 request_focus(ui, r.get("id").and_then(serde_json::Value::as_u64));
             }
         }
@@ -608,7 +617,7 @@ fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deck
                     let rest: Vec<String> = lines.split_off(line);
                     let title = rest.first().cloned().unwrap_or_default();
                     let body = rest.iter().skip(1).map(|l| l.strip_prefix('\t').unwrap_or(l).to_string()).collect::<Vec<_>>().join("\n");
-                    let _ = app.run("text.set", json!({"id": sh.id.0, "text": lines.join("\n")}));
+                    let _ = app.run("text.set", json!({"id": sh.id.0, "text": lines.join("\n"), "outline": true}));
                     if let Ok(r) = app.session.execute("slide.new", &json!({"at": i + 1, "layout": "titleAndContent", "title": title, "body": body}))
                     {
                         request_focus(ui, r.get("id").and_then(serde_json::Value::as_u64));
@@ -625,7 +634,7 @@ fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deck
                     }
                 }
                 v = lines.join("\n");
-                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v}));
+                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v, "outline": true}));
                 let moved = if tab { caret + 1 } else { caret.saturating_sub(1) };
                 if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), id) {
                     st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(moved))));
@@ -640,7 +649,7 @@ fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deck
                 let _ = app.run("slide.go", json!({"index": i}));
             }
             if resp.lost_focus() && v != cur_text {
-                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v}));
+                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v, "outline": true}));
             }
             if !resp.has_focus() {
                 ui.data_mut(|d| d.remove::<String>(id));

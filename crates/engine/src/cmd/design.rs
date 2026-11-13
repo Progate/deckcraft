@@ -67,6 +67,15 @@ pub fn specs() -> Vec<CommandSpec> {
             header_footer
         ),
         cmd!(
+            "design.notesHeaderFooter",
+            "Header and Footer (Notes and Handouts)",
+            ["Insert", "Text", "Header & Footer"],
+            None,
+            "{date?: bool, dateText?: string (empty: update automatically), header?: bool, headerText?, footer?: bool, footerText?, pageNumber?: bool}",
+            has_doc,
+            notes_header_footer
+        ),
+        cmd!(
             noundo "view.mode",
             "Presentation Views",
             ["View", "Presentation Views"],
@@ -755,10 +764,21 @@ fn hide_bg_graphics(s: &mut Session, p: &Value) -> Result<Value> {
 fn scale_shapes(shapes: &mut [Shape], sx: f64, sy: f64, k: f64, ox: f64, oy: f64) {
     for sh in shapes {
         if let Some(x) = sh.xfrm.as_mut() {
-            x.x = x.x * sx + ox;
-            x.y = x.y * sy + oy;
-            x.w *= sx;
-            x.h *= sy;
+            // Pictures (a logo on the master) keep their proportions, as in PowerPoint: they
+            // scale by the smaller factor and stay centred where the box would have gone.
+            if matches!(sh.kind, deckcraft_model::ShapeKind::Picture { .. }) && (sx - sy).abs() > 1e-9 {
+                let f = sx.min(sy);
+                let (cx, cy) = ((x.x + x.w / 2.0) * sx + ox, (x.y + x.h / 2.0) * sy + oy);
+                x.w *= f;
+                x.h *= f;
+                x.x = cx - x.w / 2.0;
+                x.y = cy - x.h / 2.0;
+            } else {
+                x.x = x.x * sx + ox;
+                x.y = x.y * sy + oy;
+                x.w *= sx;
+                x.h *= sy;
+            }
         }
         if let Some(t) = sh.text.as_mut() {
             deckcraft_model::edit::format_all(t, &|r| {
@@ -1050,6 +1070,96 @@ pub fn handout_placeholder(kind: PhType, size: Size, id: ShapeId) -> Shape {
         text: Some(text),
         ..Default::default()
     }
+}
+
+/// Header & Footer › Notes and Handouts: the header, date, footer and page number of the notes
+/// master and the handout master (their placeholders, with the text), as PowerPoint applies them
+/// to every notes page and handout.
+fn notes_header_footer(s: &mut Session, p: &Value) -> Result<Value> {
+    let flag = |k: &str| p.get(k).and_then(Value::as_bool);
+    let text = |k: &str| str_param(p, k).map(String::from);
+    let wants = [
+        (PhType::Header, flag("header"), text("headerText")),
+        (PhType::Date, flag("date"), text("dateText")),
+        (PhType::Footer, flag("footer"), text("footerText")),
+        (PhType::SlideNum, flag("pageNumber"), None),
+    ];
+    s.edit(|doc, _| {
+        let size = doc.notes_size;
+        let theme = doc.masters.first().map(|m| m.theme.clone()).unwrap_or_default();
+        let color_map = doc.masters.first().map(|m| m.color_map.clone()).unwrap_or_default();
+        // Masters this deck has never had start from PowerPoint's default placeholders.
+        if doc.notes_master.as_ref().is_none_or(|m| m.shapes.is_empty()) {
+            let mut shapes = deckcraft_pptx::notes_master_shapes(size);
+            for sh in &mut shapes {
+                sh.id = ShapeId(doc.alloc_id().ok_or_else(|| bad("design.notesHeaderFooter", NO_ID_SPACE))?);
+            }
+            doc.notes_master = Some(Arc::new(deckcraft_model::Master {
+                name: "Notes Master".into(),
+                theme: theme.clone(),
+                color_map: color_map.clone(),
+                shapes,
+                ..Default::default()
+            }));
+        }
+        if doc.handout_master.is_none() {
+            let mut m = deckcraft_model::Master { name: "Handout Master".into(), theme, color_map, ..Default::default() };
+            for (_, k) in HANDOUT_KINDS {
+                m.shapes.push(handout_placeholder(k, size, ShapeId(doc.alloc_id().ok_or_else(|| bad("design.notesHeaderFooter", NO_ID_SPACE))?)));
+            }
+            doc.handout_master = Some(Arc::new(m));
+        }
+        let defaults = deckcraft_pptx::notes_master_shapes(size);
+        for notes in [true, false] {
+            let mut fresh = vec![];
+            for _ in 0..4 {
+                fresh.push(ShapeId(doc.alloc_id().ok_or_else(|| bad("design.notesHeaderFooter", NO_ID_SPACE))?));
+            }
+            let slot = if notes { &mut doc.notes_master } else { &mut doc.handout_master };
+            let Some(m) = slot.as_mut().map(Arc::make_mut) else { continue };
+            for ((kind, on, txt), id) in wants.iter().zip(fresh) {
+                let Some(on) = *on else { continue };
+                let at = m.shapes.iter().position(|x| x.ph_type() == Some(*kind));
+                match (at, on) {
+                    (Some(i), false) => {
+                        m.shapes.remove(i);
+                    }
+                    (None, true) => {
+                        let mut sh = if notes {
+                            defaults.iter().find(|x| x.ph_type() == Some(*kind)).cloned().unwrap_or_else(|| handout_placeholder(*kind, size, id))
+                        } else {
+                            handout_placeholder(*kind, size, id)
+                        };
+                        sh.id = id;
+                        m.shapes.push(sh);
+                    }
+                    _ => {}
+                }
+                let Some(sh) = m.shapes.iter_mut().find(|x| x.ph_type() == Some(*kind)) else { continue };
+                let body = match (kind, txt) {
+                    (PhType::SlideNum, _) => {
+                        Some(vec![Run { text: "‹#›".into(), props: Default::default(), kind: RunKind::Field { field: "slidenum".into() } }])
+                    }
+                    (PhType::Date, Some(t)) if t.is_empty() => {
+                        Some(vec![Run { text: today(), props: date_props(), kind: RunKind::Field { field: "datetime1".into() } }])
+                    }
+                    (_, Some(t)) => Some(vec![Run { text: t.clone(), props: Default::default(), kind: RunKind::Text }]),
+                    (PhType::Date, None) if on => {
+                        Some(vec![Run { text: today(), props: date_props(), kind: RunKind::Field { field: "datetime1".into() } }])
+                    }
+                    _ => None,
+                };
+                if let Some(runs) = body {
+                    let mut t = sh.text.clone().unwrap_or_default();
+                    let props = t.paragraphs.first().map(|p| p.props.clone()).unwrap_or_default();
+                    t.paragraphs = vec![deckcraft_model::Paragraph { runs, props, ..Default::default() }];
+                    sh.text = Some(t);
+                }
+            }
+        }
+        Ok(())
+    })?;
+    ok()
 }
 
 const HANDOUT_KINDS: [(&str, PhType); 4] =

@@ -6,6 +6,7 @@
 
 	  Fixed date (empty = update automatically):	  固定 (空欄なら自動で更新):
 	  Footer text:	  フッターの文字:
+	  Header text:	  ヘッダーの文字:
 	  Present  	  スライド ショー  
 	 (not checked)	 (チェックしない)
 	 - Read-Only	 - 読み取り専用
@@ -18,12 +19,14 @@
 	+ New Slide	+ 新しいスライド
 	+ Row	+ 行
 	+ Series	+ 系列
+	, 	、
 	1 Column	1 段組み
 	1 slides per page	1 スライド/ページ
 	2 Columns	2 段組み
 	2 slides per page	2 スライド/ページ
 	3 Columns	3 段組み
 	3 slides per page	3 スライド/ページ
+	3-D	3-D
 	4 slides per page	4 スライド/ページ
 	6 slides per page	6 スライド/ページ
 	9 slides per page	9 スライド/ページ
@@ -229,6 +232,7 @@
 	Begin size	始点矢印のサイズ
 	Bell	ベル
 	Berry	ベリー
+	Best Match for Document	ドキュメントに最適なスタイル
 	Bevel	面取り
 	Bevel Perspective	透視投影、面取り
 	Bevel Rectangle	四角形、面取り
@@ -242,6 +246,7 @@
 	Block Arc	アーチ
 	Block Arrows	ブロック矢印
 	Block Cycle	ブロックの循環
+	Blue	青
 	Blue Pen	ペン: 青
 	Blur	ぼかし
 	Body	本文
@@ -279,6 +284,7 @@
 	Browse for Themes…	テーマの参照…
 	Browsed at a kiosk (full screen)	自動プレゼンテーション (フル スクリーン表示)
 	Browsed by an individual (window)	出席者として閲覧する (ウィンドウ表示)
+	Browse…	参照…
 	Building	ビル
 	Bulleted	箇条書き
 	Bullets	箇条書き
@@ -359,6 +365,7 @@
 	Choose a body font.	本文のフォントを選んでください。
 	Choose a font	フォントを選択
 	Choose a heading font.	見出しのフォントを選んでください。
+	Choose a presentation to reuse slides from.	スライドを再利用するプレゼンテーションを選んでください。
 	Choose a SmartArt Graphic	SmartArt グラフィックの選択
 	Choose where to save	保存先を選択
 	Choosing a presentation to reuse needs the desktop app	再利用するプレゼンテーションを選ぶにはデスクトップ版が必要です
@@ -503,6 +510,11 @@
 	Dark Style 1 - Accent 6	濃色スタイル 1 - アクセント 6
 	Dark\nMode	ダーク\nモード
 	Darken	暗く
+	Darker 15%	黒 + 基本色 15%
+	Darker 25%	黒 + 基本色 25%
+	Darker 35%	黒 + 基本色 35%
+	Darker 5%	黒 + 基本色 5%
+	Darker 50%	黒 + 基本色 50%
 	Dash	破線
 	Dash Dot	一点鎖線
 	Dashes	実線/点線
@@ -532,6 +544,7 @@
 	Delete cropped areas of pictures	図のトリミング部分を削除する
 	Delete Point	頂点の削除
 	Delete Repeated Word	重複語の削除
+	Delete Reply	返信の削除
 	Delete Rows	行の削除
 	Delete Series	系列の削除
 	Delete Slide	スライドの削除
@@ -674,6 +687,12 @@
 	Fill	塗りつぶし
 	Fill & Line	塗りつぶしと線
 	Fill Color	塗りつぶしの色
+	Fill: Black, Text color 1; Shadow	塗りつぶし: 黒、文字色 1; 影
+	Fill: Blue, Accent color 1; Shadow	塗りつぶし: 青、アクセント カラー 1; 影
+	Fill: Gold, Accent color 4; Reflection	塗りつぶし: ゴールド、アクセント カラー 4; 反射
+	Fill: Orange, Accent color 2; Outline: Orange, Accent color 2	塗りつぶし: オレンジ、アクセント カラー 2; 輪郭: オレンジ、アクセント カラー 2
+	Fill: White; Outline: Black, Text color 1; Shadow	塗りつぶし: 白; 輪郭: 黒、文字色 1; 影
+	Fill: White; Outline: Blue, Accent color 1; Glow: Blue, Accent color 1	塗りつぶし: 白; 輪郭: 青、アクセント カラー 1; 光彩: 青、アクセント カラー 1
 	Find	検索
 	Find and Replace	検索と置換
 	Find Next	次を検索
@@ -738,6 +757,7 @@
 	Font	フォント
 	Font Color	フォントの色
 	Font name	フォント名
+	Font Size	フォント サイズ
 	Font size must be a number	フォント サイズには数値を入力してください
 	Fonts	フォント
 	Font…	フォント…
@@ -793,6 +813,7 @@
 	Globe	地球
 	Glow	光彩
 	Go to	移動
+	Gold	ゴールド
 	Gradient fill	塗りつぶし (グラデーション)
 	Gradient Range - Accent 1	グラデーション - アクセント 1
 	Gradient Range - Accent 2	グラデーション - アクセント 2
@@ -802,8 +823,10 @@
 	Gradient Range - Accent 6	グラデーション - アクセント 6
 	Gradient stops	グラデーションの分岐点
 	Gradient…	グラデーション…
+	Gray	灰色
 	Grayscale	グレースケール
 	Greek	ギリシャ語
+	Green	緑
 	Grid and Guides	グリッドとガイド
 	Grid Matrix	グリッド マトリックス
 	Grid Options	グリッドとガイド
@@ -829,6 +852,7 @@
 	Handouts (9 slides per page)	配布資料 (9 スライド/ページ)
 	Hanging	ぶら下げ
 	Harbor	ハーバー
+	Hard-to-read text contrast	読みにくい文字のコントラスト
 	Header	ヘッダー
 	Header &\nFooter	ヘッダーと\nフッター
 	Header and Footer	ヘッダーとフッター
@@ -897,6 +921,7 @@
 	Ink to\nText	インクを\nテキストに変換
 	Inner	内側
 	Insert	挿入
+	Insert All	すべて挿入
 	Insert Hyperlink	ハイパーリンクの挿入
 	Insert Picture	図の挿入
 	Insert picture from file…	ファイルから図を挿入…
@@ -904,6 +929,7 @@
 	Insert Shapes	図形の挿入
 	Insert Table	表の挿入
 	Insert Table…	表の挿入…
+	Insert this slide	このスライドを挿入
 	Insert\nAbove	上に行を\n挿入
 	Insert\nBelow	下に行を\n挿入
 	Insert\nLayout	レイアウト\nの挿入
@@ -936,6 +962,7 @@
 	Justify	両端揃え
 	Justify low	下揃え (均等割り付け)
 	Keep Source Formatting	元の書式を保持
+	Keep source formatting	元の書式を保持する
 	Keep Text Only	テキストのみ保持
 	Keeps the layout, fonts and pictures	レイアウト・フォント・画像を保ちます
 	Key	鍵
@@ -982,6 +1009,14 @@
 	Light Style 2 - Accent 6	淡色スタイル 2 - アクセント 6
 	Light/Dark appearance	ライト/ダーク表示
 	Lighten	明るく
+	Lighter 10%	白 + 基本色 10%
+	Lighter 25%	白 + 基本色 25%
+	Lighter 40%	白 + 基本色 40%
+	Lighter 50%	白 + 基本色 50%
+	Lighter 60%	白 + 基本色 60%
+	Lighter 75%	白 + 基本色 75%
+	Lighter 80%	白 + 基本色 80%
+	Lighter 90%	白 + 基本色 90%
 	Lighting	光源
 	Lightning Bolt	稲妻
 	Line	線
@@ -1144,6 +1179,7 @@
 	Not inspected.	検査していません。
 	Not saved yet	まだ保存されていません
 	Notes	ノート
+	Notes and Handouts	ノートと配布資料
 	Notes Master	ノート マスター
 	Notes Page	ノート
 	Notes Pages	ノート
@@ -1184,6 +1220,7 @@
 	Opens straight into the slide show	開くとすぐにスライド ショーが始まります
 	Open…	開く…
 	Options	オプション
+	Orange	オレンジ
 	Orbit	オービット
 	Order Objects	オブジェクトの順序
 	Ordinals (1st) with superscript	序数 (1st) を上付き文字にする
@@ -1203,6 +1240,7 @@
 	Oval ends	両端に円
 	Page Curl	ページ カール
 	Page Number	ページ番号
+	Page number	ページ番号
 	Page Setup…	ページ設定…
 	Pan	パン
 	Pane	ウィンドウ
@@ -1229,6 +1267,7 @@
 	Pause	一時停止
 	PDF (*.pdf)	PDF (*.pdf)
 	PDF document (.pdf)	PDF ドキュメント (.pdf)
+	PDF Viewer	PDF ビューアー
 	Peanut	ピーナッツ
 	Peek In	ピークイン
 	Peek Out	ピークアウト
@@ -1265,9 +1304,11 @@
 	Pie	円
 	Pie chart	円グラフ
 	Pin	ピン
+	Pink	ピンク
 	Pixels of this colour become transparent:	この色の画素を透明にします:
 	Placeholder colour	プレースホルダーの色
 	Places	場所
+	Plan\nBuild\nLaunch	計画\n構築\n公開
 	Plaque	ブローチ
 	Play	再生
 	Play Across Slides	スライド切り替え後も再生
@@ -1326,6 +1367,7 @@
 	Print Hidden Slides	非表示スライドを印刷する
 	Print layout:	印刷レイアウト:
 	Print them for your audience	聞き手に配る資料を印刷します
+	Printer	プリンター
 	Print…	印刷…
 	Process	手順
 	Product Information	製品情報
@@ -1336,6 +1378,7 @@
 	PROTECTED	保護
 	Pulse	パルス
 	Punctuation	句読点
+	Purple	紫
 	Push	プッシュ
 	Put a picture in the selected node's picture placeholder	選択した項目の画像のプレースホルダーに図を入れます
 	Pyramid	ピラミッド
@@ -1370,6 +1413,7 @@
 	Rectangle: Top Corners Snipped	四角形: 上の 2 つの角を切り取る
 	Rectangles	四角形
 	Rectangular	四角
+	Red	赤
 	Red Pen	ペン: 赤
 	Redo	やり直し
 	Reenter password to modify:	書き込みパスワードをもう一度入力してください:
@@ -1429,6 +1473,7 @@
 	Resize shape to fit text	テキストに合わせて図形のサイズを調整する
 	Resolve	解決
 	Resume	再開
+	Reuse Slides	スライドの再利用
 	Reuse Slides (Keep Source Formatting)…	スライドの再利用 (元の書式を保持)…
 	Reuse Slides needs the desktop app	スライドの再利用にはデスクトップ版が必要です
 	Reuse Slides…	スライドの再利用…
@@ -1476,6 +1521,7 @@
 	Saturation {}%	彩度 {}%
 	Save	上書き保存
 	Save As	名前を付けて保存
+	Save as PDF	PDF として保存
 	Save As…	名前を付けて保存…
 	Saved	保存しました
 	Saving a copy needs a file picker, which this window doesn't have.	コピーを保存するにはファイルの選択画面が必要ですが、このウィンドウにはありません。
@@ -1566,6 +1612,7 @@
 	Size and Position…	サイズと位置…
 	Size:	サイズ:
 	Slate	スレート
+	Slide	スライド
 	Slide Image	スライド イメージ
 	Slide inserted after {slide}	{slide} の後にスライドを挿入しました
 	Slide Master	スライド マスター
@@ -1805,6 +1852,7 @@
 	Trim Media	ビデオのトリミング
 	Triple	三重線
 	Turns	ターン
+	Turquoise	青緑
 	Two Content	2 つのコンテンツ
 	Type	種類
 	Type an equation in linear form (e.g. a^2+b^2=c^2, x=(-b±√(b^2-4ac))/2a).	数式を線形形式で入力します (例: a^2+b^2=c^2、x=(-b±√(b^2-4ac))/2a)。
@@ -1877,11 +1925,13 @@
 	WordArt	ワードアート
 	WordArt style {}	ワードアートのスタイル {}
 	WordArt Styles	ワードアートのスタイル
+	WordArt\nStyles	ワードアート\nのスタイル
 	Words	単語
 	Wrap text in shape	図形内でテキストを折り返す
 	X	バツ
 	X Rotation	X 方向に回転
 	Y Rotation	Y 方向に回転
+	Yellow	黄
 	Your changes will be lost if you don't save them.	保存しないと、変更内容は失われます。
 	Your name (comments):	名前 (コメント):
 	Your text here	ここに文字を入力
@@ -1894,6 +1944,8 @@
 	Zoom Out	縮小
 	Zoom to	ズーム
 	Zoom…	ズーム…
+	{font} (Body)	{font} (本文)
+	{font} (Headings)	{font} (見出し)
 	–  Bullet	–  ダッシュの行頭文字
 	“{name}” is protected. Enter the password to modify, or open it read-only.	“{name}” は保護されています。書き込みパスワードを入力するか、読み取り専用で開いてください。
 	•  Bullet	•  塗りつぶし丸の行頭文字
@@ -1904,6 +1956,8 @@
 	★  Bullet	★  星形の行頭文字
 	✓  Bullet	✓  チェック マークの行頭文字
 	➢  Bullet	➢  矢印の行頭文字
+button	Download	ダウンロード
+button	Save	保存
 chart	100% Stacked Bar	100% 積み上げ横棒
 chart	100% Stacked Column	100% 積み上げ縦棒
 chart	Above Chart	グラフの上

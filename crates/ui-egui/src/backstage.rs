@@ -162,6 +162,9 @@ pub struct Backstage {
     /// Info: property drafts while a field is being edited.
     props: Vec<String>,
     pub print_scope: PrintScope,
+    /// The printer: "Save as PDF" writes the printout to a file the user names (PowerPoint's
+    /// Microsoft Print to PDF); otherwise it opens in the PDF viewer to print.
+    pub print_to_file: bool,
     pub print_range: String,
     /// `slides`, `notes`, or `h1`…`h9` (handouts with that many slides a page).
     pub print_layout: &'static str,
@@ -189,6 +192,7 @@ impl Backstage {
             query: String::new(),
             props: vec![String::new(); PROPERTIES.len()],
             print_scope: PrintScope::All,
+            print_to_file: true,
             print_range: String::new(),
             print_layout: "slides",
             print_hidden: false,
@@ -1004,7 +1008,9 @@ fn save_as(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
         });
         let web = app.services.pick_save.is_none();
         let label = if web { "Download" } else { "Save" };
-        let save = ui.add(egui::Button::new(RichText::new(crate::i18n::t(label)).color(t.accent_text)).fill(t.accent).min_size(vec2(84.0, 26.0)));
+        // The Save As page's button is 保存, not the side menu's 上書き保存 (context `button`).
+        let save =
+            ui.add(egui::Button::new(RichText::new(crate::i18n::tc("button", label)).color(t.accent_text)).fill(t.accent).min_size(vec2(84.0, 26.0)));
         if save.on_hover_text(crate::i18n::t(if web { "Download the file" } else { "Choose where to save" })).clicked() {
             let fmt = bs.file_type;
             let done = if matches!(fmt, "pptx" | "potx" | "ppsx" | "deckcraft") {
@@ -1106,8 +1112,23 @@ fn print(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
             if square_button(ui, Icon::Print, "Print", ok).clicked()
                 && let Ok(s) = &slides
             {
-                app.print_pdf(print_params(bs, s));
+                if bs.print_to_file && app.services.pick_save.is_some() {
+                    app.print_to_pdf_file(print_params(bs, s));
+                } else {
+                    app.print_pdf(print_params(bs, s));
+                }
             }
+            ui.add_space(6.0);
+            heading(ui, "Printer");
+            let printer = if bs.print_to_file { "Save as PDF" } else { "PDF Viewer" };
+            egui::ComboBox::from_id_salt("backstage_printer").width(240.0).selected_text(crate::i18n::t(printer)).show_ui(ui, |ui| {
+                if ui.selectable_label(bs.print_to_file, tl!("Save as PDF")).clicked() {
+                    bs.print_to_file = true;
+                }
+                if ui.selectable_label(!bs.print_to_file, tl!("PDF Viewer")).clicked() {
+                    bs.print_to_file = false;
+                }
+            });
             ui.add_space(6.0);
             dim(
                 ui,

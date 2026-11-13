@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Icons",
             ["Insert", "Illustrations"],
             None,
-            "{name: star|arrow-right|… (see insert.icons), rect?: [x,y,w,h]}",
+            "{name: star|arrow-right|… (see insert.icons), rect?: [x,y,w,h], label?: the shape name (default: the icon label)}",
             has_slide,
             insert_icon
         ),
@@ -73,7 +73,16 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("insert.audio", "Audio from File…", ["Insert", "Media", "Audio"], None, "{path? | data: base64, name?, rect?}", has_slide, audio),
         cmd!("insert.video", "Video from File…", ["Insert", "Media", "Video"], None, "{path? | data: base64, name?, rect?}", has_slide, video),
-        cmd!("insert.wordArt", "WordArt", ["Insert", "Text"], None, "{text?, style?: 0..}", has_slide, word_art),
+        cmd!("insert.wordArt", "WordArt", ["Insert", "Text"], None, "{text?, style?: 0-5}", has_slide, word_art),
+        cmd!(
+            "format.wordArtStyle",
+            "WordArt Styles",
+            ["Shape Format", "WordArt Styles"],
+            None,
+            "{style: 0-5} (the text selection, else all text of the selected shapes)",
+            has_text_or_shapes,
+            word_art_style
+        ),
         cmd!("insert.slideNumber", "Slide Number", ["Insert", "Text"], None, "{}", has_slide, slide_number),
         cmd!(
             "insert.dateTime",
@@ -256,7 +265,8 @@ fn insert_icon(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad("insert.icon", "rect needs a positive width and height"));
     }
     let shape = Shape {
-        name: icon.label.to_string(),
+        // The UI names the icon in its own language (PowerPoint names an icon shape after it).
+        name: str_param(p, "label").filter(|l| !l.trim().is_empty()).unwrap_or(icon.label).to_string(),
         xfrm: Some(rect),
         geom: Geom::Custom {
             paths: vec![deckcraft_model::CustomPath {
@@ -1339,6 +1349,68 @@ fn video(s: &mut Session, p: &Value) -> Result<Value> {
     media(s, p, true)
 }
 
+/// WordArt's gallery, in order: (name as PowerPoint words it). Each is a fill, an outline and an
+/// effect on the text, so the styles look different from each other and from plain text.
+pub const WORD_ART_STYLES: [&str; 6] = [
+    "Fill: Black, Text color 1; Shadow",
+    "Fill: Blue, Accent color 1; Shadow",
+    "Fill: White; Outline: Blue, Accent color 1; Glow: Blue, Accent color 1",
+    "Fill: Orange, Accent color 2; Outline: Orange, Accent color 2",
+    "Fill: White; Outline: Black, Text color 1; Shadow",
+    "Fill: Gold, Accent color 4; Reflection",
+];
+
+fn shadow() -> deckcraft_model::style::Shadow {
+    deckcraft_model::style::Shadow {
+        color: ColorRef::rgb(deckcraft_color::Rgba::BLACK).with(deckcraft_color::ColorTransform::Alpha(40_000)),
+        blur: 3.0,
+        dist: 2.5,
+        dir: 45.0,
+        inner: false,
+        sx: 1.0,
+        sy: 1.0,
+        kx: 0.0,
+        ky: 0.0,
+        align: "tl".into(),
+        rotate_with_shape: false,
+    }
+}
+
+/// The run formatting of WordArt style `style` ([`WORD_ART_STYLES`]).
+pub fn apply_word_art_style(r: &mut deckcraft_model::text::RunProps, style: usize) {
+    let scheme = |slot| ColorRef::scheme(slot);
+    let (fill, outline, effect) = match style % WORD_ART_STYLES.len() {
+        0 => (SchemeSlot::Tx1, None, 0),
+        1 => (SchemeSlot::Accent1, None, 0),
+        2 => (SchemeSlot::Bg1, Some(SchemeSlot::Accent1), 1),
+        3 => (SchemeSlot::Accent2, Some(SchemeSlot::Accent2), 3),
+        4 => (SchemeSlot::Bg1, Some(SchemeSlot::Tx1), 0),
+        _ => (SchemeSlot::Accent4, None, 2),
+    };
+    r.bold = Some(true);
+    r.fill = Some(Fill::solid(scheme(fill)));
+    r.outline = outline.map(|o| deckcraft_model::Line::solid(scheme(o), 1.0));
+    r.shadow = None;
+    r.glow = None;
+    r.reflection = None;
+    match effect {
+        0 => r.shadow = Some(shadow()),
+        1 => {
+            r.glow = Some(deckcraft_model::style::Glow {
+                color: scheme(SchemeSlot::Accent1).with(deckcraft_color::ColorTransform::Alpha(40_000)),
+                radius: 6.0,
+            })
+        }
+        2 => r.reflection = Some(deckcraft_model::style::Reflection { blur: 0.5, start_alpha: 0.5, end_alpha: 0.0, end_pos: 0.35, dist: 0.0 }),
+        _ => {}
+    }
+}
+
+fn word_art_style(s: &mut Session, p: &Value) -> Result<Value> {
+    let style = usize_param(p, "style").ok_or_else(|| bad("format.wordArtStyle", "missing `style`"))?;
+    super::text::format_run(s, &move |r| apply_word_art_style(r, style))
+}
+
 fn word_art(s: &mut Session, p: &Value) -> Result<Value> {
     let text = str_param(p, "text").unwrap_or(crate::localized("Your text here", "ここに文字を入力"));
     let size = s.doc()?.doc.slide_size;
@@ -1349,16 +1421,7 @@ fn word_art(s: &mut Session, p: &Value) -> Result<Value> {
             para.props.align = Some(deckcraft_model::text::Align::Center);
             for r in &mut para.runs {
                 r.props.size = Some(54.0);
-                r.props.bold = Some(style % 2 == 1);
-                r.props.fill = Some(Fill::solid(ColorRef::scheme(match style % 4 {
-                    0 => SchemeSlot::Tx1,
-                    1 => SchemeSlot::Accent1,
-                    2 => SchemeSlot::Accent2,
-                    _ => SchemeSlot::Accent4,
-                })));
-                if style % 3 == 2 {
-                    r.props.outline = Some(deckcraft_model::Line::solid(ColorRef::scheme(SchemeSlot::Bg1), 1.0));
-                }
+                apply_word_art_style(&mut r.props, style);
             }
         }
     }
@@ -1882,6 +1945,7 @@ fn chart_format(s: &mut Session, p: &Value) -> Result<Value> {
         }
     };
     with_chart(s, p, "chart.format", |c| {
+        let kind = c.kind;
         let n = c.categories.len().max(c.series.iter().map(|s| s.values.len()).max().unwrap_or(0));
         let Some(ser) = c.series.get_mut(series) else { return Err(bad("chart.format", "no such series")) };
         match point {
@@ -1896,6 +1960,13 @@ fn chart_format(s: &mut Session, p: &Value) -> Result<Value> {
             None => {
                 ser.fill = fill.clone();
                 ser.point_fills.clear();
+                // Line charts: the colour is the line's (`c:spPr/a:ln`).
+                if matches!(kind, ChartType::Line | ChartType::LineMarkers | ChartType::StackedLine | ChartType::Radar) {
+                    ser.line = fill.as_ref().and_then(|f| match f {
+                        Fill::Solid { color } => Some(deckcraft_model::Line::solid(color.clone(), 2.25)),
+                        _ => None,
+                    });
+                }
             }
         }
         c.raw = None;

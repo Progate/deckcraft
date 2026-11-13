@@ -25,7 +25,8 @@ pub struct Entry {
 /// - `chart`: Add Chart Element's menus, where "Gridlines", "Top"… name chart parts.
 /// - `quickstyle`: Shape Styles names (`Subtle Effect` is パステル there, not a SmartArt style).
 /// - `warp`: Transform (text effect) names (`Circle`, `Stop` name shapes of text there).
-pub const CONTEXTS: &[&str] = &["ribbon", "effect", "chart", "quickstyle", "warp"];
+/// - `button`: a dialog's own button (`Save` is 保存 there, 上書き保存 in the File menu).
+pub const CONTEXTS: &[&str] = &["ribbon", "effect", "chart", "quickstyle", "warp", "button"];
 
 /// A parsed catalog. Values are owned for the life of the process (catalogs are built once).
 #[derive(Debug, Default)]

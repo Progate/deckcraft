@@ -76,7 +76,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Text",
             [],
             None,
-            "{id?, text, cell?: [r, c]} — replaces the whole text, keeping the first run's formatting",
+            "{id?, text, cell?: [r, c], outline?: bool (leading tabs alone give every line its level, as the outline view types it)} — replaces the whole text, keeping the first run's formatting",
             has_slide,
             set
         ),
@@ -1223,6 +1223,7 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let cell = p.get("cell").and_then(Value::as_array).and_then(|a| Some((a.first()?.as_u64()? as usize, a.get(1)?.as_u64()? as usize)));
     let inherited = inherited_aligns(s, id);
+    let outline = bool_or(p, "outline", false);
     edit_shapes(s, &json!({"id": id}), "text.set", |sh| {
         let target = match (&mut sh.kind, cell) {
             (ShapeKind::Table(t), Some((r, c))) => t.cell_mut(r, c).map(|x| &mut x.text),
@@ -1234,8 +1235,11 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
         let levels: Vec<(u8, deckcraft_model::text::ParaProps)> = body.paragraphs.iter().map(|p| (p.level, p.props.clone())).collect();
         let mut nb = TextBody::from_text(&text);
         for (i, para) in nb.paragraphs.iter_mut().enumerate() {
-            // Leading tabs set the outline level.
+            // Leading tabs set the outline level. From the outline view a line without tabs is
+            // first-level: otherwise a line promoted to level 1 (or one inserted above others)
+            // would take the level its paragraph number had before.
             if !apply_leading_tabs(para)
+                && !outline
                 && let Some((lv, pp)) = levels.get(i)
             {
                 para.level = *lv;

@@ -355,7 +355,9 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
                 let vars = deckcraft_color::theme_variants(base);
                 let Some((mods, label)) = vars.get(row) else { continue };
                 let c = deckcraft_color::apply(base, mods);
-                if sw(ui, c, label) {
+                // Named as PowerPoint names a tint or shade: the theme colour, then 白 + 基本色 80%.
+                let tip = format!("{}{}{}", crate::i18n::t(slot.label()), crate::i18n::t(", "), crate::i18n::t(label));
+                if sw(ui, c, &tip) {
                     let alias = match slot {
                         SchemeSlot::Lt1 => SchemeSlot::Bg1,
                         SchemeSlot::Dk1 => SchemeSlot::Tx1,

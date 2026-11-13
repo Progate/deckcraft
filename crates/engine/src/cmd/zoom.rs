@@ -125,8 +125,11 @@ fn zoom(s: &mut Session, p: &Value) -> Result<Value> {
         })
         .collect();
     let summary = kind == "summary";
-    let summary_title = str_param(p, "title").filter(|t| !t.trim().is_empty()).unwrap_or("Summary").to_string();
-    let summary_section = str_param(p, "sectionName").filter(|t| !t.trim().is_empty()).unwrap_or("Summary Section").to_string();
+    let summary_title = str_param(p, "title").filter(|t| !t.trim().is_empty()).unwrap_or(crate::localized("Summary", "サマリー")).to_string();
+    let summary_section = str_param(p, "sectionName")
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or(crate::localized("Summary Section", "サマリー セクション"))
+        .to_string();
     let section_names: Vec<(usize, String)> = targets
         .iter()
         .map(|t| {

@@ -21,6 +21,7 @@ mod xml;
 
 /// The bounded XML reader the importer uses, for callers that read kept fragments (a shape's
 /// 3-D settings) instead of scanning strings.
+pub use write::notes_master_shapes;
 pub use xml::{Doc as XmlDoc, El as XmlEl, parse as parse_xml};
 
 use deckcraft_model::Presentation;

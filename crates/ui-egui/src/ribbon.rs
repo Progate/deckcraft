@@ -520,12 +520,12 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                 let size = st.get("size").and_then(Value::as_f64);
                 let fams = font_families(app);
                 let theme_fonts: Vec<String> = fams.iter().take(2).cloned().collect();
-                dropdown(ui, "font", &font, 150.0, en, |ui| {
+                let font_box = dropdown(ui, "font", &font, 150.0, en, |ui| {
                     for (k, f) in fams.iter().enumerate() {
                         let label = if k == 0 && theme_fonts.len() == 2 {
-                            format!("{f} (Headings)")
+                            crate::i18n::fmt(tl!("{font} (Headings)"), &[("font", f)])
                         } else if k == 1 && theme_fonts.len() == 2 {
-                            format!("{f} (Body)")
+                            crate::i18n::fmt(tl!("{font} (Body)"), &[("font", f)])
                         } else {
                             f.clone()
                         };
@@ -544,15 +544,20 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                         ui.close();
                     }
                 });
+                // Named for screen readers and tests, with PowerPoint's tooltips (フォント / フォント サイズ).
+                font_box.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, tl!("Font")));
+                let _ = font_box.on_hover_text(tl!("Font"));
                 let size_text = size.map(|s| widgets::fmt_num(s, "")).unwrap_or_default();
-                dropdown(ui, "size", &size_text, 52.0, en, |ui| {
+                let size_box = dropdown(ui, "size", &size_text, 52.0, en, |ui| {
                     for s in deckcraft_engine::cmd::format::SIZES.iter().chain([72.0, 80.0, 88.0, 96.0].iter()) {
-                        if ui.button(crate::i18n::t(&(widgets::fmt_num(*s, "")))).clicked() {
+                        if ui.button(widgets::fmt_num(*s, "")).clicked() {
                             run(app, "format.size", json!({"size": s}));
                             ui.close();
                         }
                     }
                 });
+                size_box.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, en, tl!("Font Size")));
+                let _ = size_box.on_hover_text(tl!("Font Size"));
                 toggle(app, ui, Icon::FontGrow, "Increase Font Size", "format.grow", false);
                 toggle(app, ui, Icon::FontShrink, "Decrease Font Size", "format.shrink", false);
                 toggle(app, ui, Icon::ClearFormatting, "Clear All Formatting", "format.clear", false);
@@ -1101,6 +1106,76 @@ pub fn effects_menu(app: &mut SlideApp, ui: &mut Ui) {
     }
 }
 
+/// The everyday name of a colour (`Blue`, `Orange`…) as PowerPoint words theme colours in style
+/// names: by lightness for greys, else by hue.
+pub fn hue_name(c: deckcraft_color::Rgba) -> &'static str {
+    let (r, g, b) = (f64::from(c.r) / 255.0, f64::from(c.g) / 255.0, f64::from(c.b) / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let l = (max + min) / 2.0;
+    if max - min < 0.08 {
+        return if l < 0.2 {
+            "Black"
+        } else if l > 0.9 {
+            "White"
+        } else {
+            "Gray"
+        };
+    }
+    let d = max - min;
+    let h = if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    match h {
+        h if h < 15.0 || h >= 345.0 => "Red",
+        h if h < 40.0 => "Orange",
+        h if h < 52.0 => "Gold",
+        h if h < 70.0 => "Yellow",
+        h if h < 165.0 => "Green",
+        h if h < 200.0 => "Turquoise",
+        h if h < 255.0 => "Blue",
+        h if h < 290.0 => "Purple",
+        _ => "Pink",
+    }
+}
+
+/// WordArt's styles as tiles drawn in each style's colours, named in the tooltip; `cmd` inserts
+/// WordArt or restyles the selected text.
+fn word_art_gallery(app: &mut SlideApp, ui: &mut Ui, cmd: &str) {
+    let sc = scheme(app);
+    let c = |slot| theme::to_color32(sc.get(slot));
+    use deckcraft_color::SchemeSlot as S;
+    let looks =
+        [(S::Tx1, None), (S::Accent1, None), (S::Bg1, Some(S::Accent1)), (S::Accent2, Some(S::Accent2)), (S::Bg1, Some(S::Tx1)), (S::Accent4, None)];
+    ui.horizontal_wrapped(|ui| {
+        ui.set_max_width(260.0);
+        for (i, (name, (fill, line))) in deckcraft_engine::cmd::insert::WORD_ART_STYLES.iter().zip(looks).enumerate() {
+            let (rect, resp) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::click());
+            let p = ui.painter();
+            let bg = if fill == S::Bg1 { Color32::from_gray(225) } else { Color32::WHITE };
+            p.rect_filled(rect.shrink(1.0), CornerRadius::same(3), bg);
+            if let Some(l) = line {
+                for d in [vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0)] {
+                    p.text(rect.center() + d, Align2::CENTER_CENTER, "A", theme::bold(24.0), c(l));
+                }
+            } else {
+                p.text(rect.center() + vec2(1.5, 1.5), Align2::CENTER_CENTER, "A", theme::bold(24.0), Color32::from_black_alpha(70));
+            }
+            p.text(rect.center(), Align2::CENTER_CENTER, "A", theme::bold(24.0), c(fill));
+            if resp.hovered() {
+                p.rect_stroke(rect, CornerRadius::same(3), Stroke::new(1.5, Tokens::get(ui.ctx()).accent), egui::StrokeKind::Inside);
+            }
+            if resp.on_hover_text(crate::i18n::t(name)).clicked() {
+                run(app, cmd, json!({"style": i}));
+                ui.close();
+            }
+        }
+    });
+}
+
 fn quick_styles(app: &mut SlideApp, ui: &mut Ui) {
     let sc = scheme(app);
     let slots = [
@@ -1123,8 +1198,10 @@ fn quick_styles(app: &mut SlideApp, ui: &mut Ui) {
                         .get(row)
                         .copied()
                         .unwrap_or("");
-                let colour = if k == 0 { "Dark 1".to_string() } else { format!("Accent {k}") };
-                let resp = resp.on_hover_text(format!("{} - {}", crate::i18n::tc("quickstyle", style), crate::i18n::t(&colour)));
+                // PowerPoint names the colour by its look, then its theme slot: 「パステル - 青、アクセント 1」.
+                let slot_name = if k == 0 { "Dark 1".to_string() } else { format!("Accent {k}") };
+                let colour = format!("{}{}{}", crate::i18n::t(hue_name(sc.get(*slot))), tl!(", "), crate::i18n::t(&slot_name));
+                let resp = resp.on_hover_text(format!("{} - {colour}", crate::i18n::tc("quickstyle", style)));
                 let p = ui.painter();
                 let (fill, stroke, text) = match row {
                     0 => (Color32::WHITE, c, Color32::BLACK),
@@ -1335,13 +1412,7 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
         big(app, ui, Icon::TextBox, "Text\nBox", "insert.textBox", json!({}));
         big(app, ui, Icon::HeaderFooter, "Header &\nFooter", "app.dialog", json!({"id": "headerFooter"}));
         let r = big_button(ui, Icon::WordArt, "WordArt", enabled(app, "insert.wordArt"));
-        egui::Popup::menu(&r).show(|ui| {
-            for i in 0..6 {
-                if ui.button(crate::i18n::t(&(format!("WordArt style {}", i + 1)))).clicked() {
-                    run(app, "insert.wordArt", json!({"style": i}));
-                }
-            }
-        });
+        egui::Popup::menu(&r).show(|ui| word_art_gallery(app, ui, "insert.wordArt"));
         big(app, ui, Icon::DateTime, "Date &\nTime", "insert.dateTime", json!({}));
         big(app, ui, Icon::SlideNumber, "Slide\nNumber", "insert.slideNumber", json!({}));
     });
@@ -1416,7 +1487,8 @@ fn icon_library(app: &mut SlideApp, ui: &mut Ui) {
             let mut n = 0;
             ui.horizontal_wrapped(|ui| {
                 for icon in icons {
-                    if icon.name.contains(&q) || icon.label.to_lowercase().contains(&q) {
+                    // English id and label, or the label in the interface language (時計, 矢印…).
+                    if icon.name.contains(&q) || icon.label.to_lowercase().contains(&q) || crate::i18n::t(icon.label).to_lowercase().contains(&q) {
                         icon_cell(app, ui, icon, color, hover);
                         n += 1;
                     }
@@ -1436,7 +1508,7 @@ fn icon_cell(app: &mut SlideApp, ui: &mut Ui, icon: &deckcraft_engine::icons::Ic
     }
     paint_icon(ui.painter(), r.shrink(6.0), icon, color);
     if resp.on_hover_text(crate::i18n::t(icon.label)).clicked() {
-        let _ = app.run("insert.icon", json!({"name": icon.name}));
+        let _ = app.run("insert.icon", json!({"name": icon.name, "label": crate::i18n::t(icon.label)}));
         ui.close();
     }
 }
@@ -2524,6 +2596,8 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
         });
     });
     group(ui, |ui| {
+        let r = big_button(ui, Icon::WordArt, "WordArt\nStyles", sel);
+        egui::Popup::menu(&r).show(|ui| word_art_gallery(app, ui, "format.wordArtStyle"));
         rows(ui, |ui| {
             let (_, a) = small_button_ex(ui, Icon::TextFill, "Text Fill", sel, false, true);
             if let Some(a) = a {
@@ -3337,10 +3411,11 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
         });
         let (r, _) = small_button_ex(ui, Icon::SmartArt, "SmartArt Styles", gid.is_some(), false, true);
         egui::Popup::menu(&r).show(|ui| {
+            ui.label(egui::RichText::new(tl!("Best Match for Document")).small().strong());
             for (k, label) in deckcraft_engine::cmd::smartart::STYLES {
                 if k == "polished" {
                     ui.separator();
-                    ui.label("3-D");
+                    ui.label(egui::RichText::new(tl!("3-D")).small().strong());
                 }
                 let on = style == k || (style.is_empty() && k == "flat");
                 if ui.selectable_label(on, crate::i18n::t(label)).clicked() {

@@ -362,3 +362,99 @@ fn ink_strokes_from_the_cli_are_saved() {
     assert!(xml.contains("name=\"Ink 1\"") || xml.contains("<a:custGeom>"), "{xml}");
     assert!(xml.contains("FF0000"));
 }
+
+#[test]
+fn notes_and_handouts_header_footer_is_saved_on_their_masters() {
+    let mut s = Session::with_new();
+    s.execute("slide.notes", &json!({"text": "メモ"})).unwrap();
+    s.execute(
+        "design.notesHeaderFooter",
+        &json!({"header": true, "headerText": "社外秘", "footer": true, "footerText": "Progate", "pageNumber": true, "date": false}),
+    )
+    .unwrap();
+    let bytes = save(&s);
+    let nm = part(&bytes, "ppt/notesMasters/notesMaster1.xml");
+    assert!(nm.contains("社外秘") && nm.contains("Progate") && nm.contains("type=\"hdr\"") && nm.contains("type=\"sldNum\""), "{nm}");
+    assert!(!nm.contains("type=\"dt\""), "the date was turned off");
+    let hm = part(&bytes, "ppt/handoutMasters/handoutMaster1.xml");
+    assert!(hm.contains("社外秘") && hm.contains("Progate"), "{hm}");
+}
+
+#[test]
+fn a_reply_can_be_deleted() {
+    let mut s = Session::with_new();
+    s.execute("comment.add", &json!({"text": "確認してください", "author": "A"})).unwrap();
+    s.execute("comment.reply", &json!({"index": 0, "text": "了解"})).unwrap();
+    s.execute("comment.reply", &json!({"index": 0, "text": "完了"})).unwrap();
+    s.execute("comment.deleteReply", &json!({"index": 0, "reply": 0})).unwrap();
+    let q = deckcraft_pptx::import(&save(&s)).unwrap();
+    let c = &q.slides[0].comments[0];
+    assert_eq!(c.replies.len(), 1);
+    assert_eq!(c.replies[0].text, "完了");
+}
+
+#[test]
+fn a_line_series_colour_is_its_line() {
+    let mut s = Session::with_new();
+    s.execute("insert.chart", &json!({"type": "line"})).unwrap();
+    s.execute("chart.format", &json!({"series": 0, "fill": "#C00000"})).unwrap();
+    let xml = chart_xml(&save(&s));
+    let ser = &xml[xml.find("<c:ser>").unwrap()..];
+    let ser = &ser[..ser.find("</c:ser>").unwrap()];
+    assert!(ser.contains("<a:ln") && ser[ser.find("<a:ln").unwrap()..].contains("C00000"), "{ser}");
+}
+
+#[test]
+fn a_master_picture_keeps_its_proportions_when_the_slide_size_changes() {
+    let mut s = Session::with_new();
+    s.execute("view.slideMaster", &json!({})).unwrap();
+    let png = {
+        let img = image::RgbImage::from_pixel(10, 10, image::Rgb([200, 0, 0]));
+        let mut out = std::io::Cursor::new(vec![]);
+        image::DynamicImage::ImageRgb8(img).write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    };
+    s.execute("insert.picture", &json!({"name": "logo.png", "data": deckcraft_engine::cmd::base64_encode(&png), "rect": [800, 20, 100, 100]}))
+        .unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("design.slideSize", &json!({"w": 720, "h": 540})).unwrap();
+    let m = &s.doc().unwrap().doc.masters[0];
+    let pic = m.shapes.iter().find(|x| matches!(x.kind, ShapeKind::Picture { .. })).unwrap();
+    let x = pic.xfrm.unwrap();
+    assert!((x.w - x.h).abs() < 0.01, "still square: {x:?}");
+}
+
+#[test]
+fn outline_text_takes_its_levels_from_tabs_only() {
+    let mut s = Session::with_new();
+    s.execute("slide.new", &json!({"layout": "titleAndContent", "body": "A\n\tB\n\tC"})).unwrap();
+    let body = s
+        .doc()
+        .unwrap()
+        .current_slide()
+        .unwrap()
+        .shapes
+        .iter()
+        .find(|x| x.ph_type() == Some(deckcraft_model::PhType::Body) || x.ph_type() == Some(deckcraft_model::PhType::Obj))
+        .unwrap()
+        .id;
+    // B is promoted to the first level and a line goes in above C.
+    s.execute("text.set", &json!({"id": body.0, "text": "A\nB\nnew\n\tC", "outline": true})).unwrap();
+    let levels: Vec<u8> = s
+        .doc()
+        .unwrap()
+        .current_slide()
+        .unwrap()
+        .shapes
+        .iter()
+        .find(|x| x.id == body)
+        .unwrap()
+        .text
+        .as_ref()
+        .unwrap()
+        .paragraphs
+        .iter()
+        .map(|p| p.level)
+        .collect();
+    assert_eq!(levels, [0, 0, 0, 1]);
+}

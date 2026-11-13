@@ -504,6 +504,10 @@ pub struct SlideApp {
     pub ui_fonts: uifonts::UiFonts,
     /// The interface language's catalog was handed to [`Self::ui_fonts`] (once per process).
     lang_fonts_noted: bool,
+    /// Home › New Slide › Reuse Slides: the presentation chosen in the Reuse Slides pane (its
+    /// path and slides) and whether to keep its formatting.
+    pub reuse: Option<(String, std::sync::Arc<deckcraft_model::Presentation>)>,
+    pub reuse_keep: bool,
     /// Thumbnail pane drag (slide index, current drop index).
     pub(crate) thumb_drag: Option<(usize, usize)>,
     /// Selection pane: folded groups, renaming, drag and drop.
@@ -542,8 +546,29 @@ fn grid_flag(p: &Value, key: &str) -> Result<Option<bool>, String> {
 }
 
 impl SlideApp {
-    pub fn new(session: Session, mut services: Services) -> Self {
+    pub fn new(mut session: Session, mut services: Services) -> Self {
         let audio_out = services.audio_out.take();
+        // Japanese interface: new presentations get Japanese layout names and sample text, dates
+        // in ja-JP. The host may have made the first, still untouched presentation already.
+        if i18n::system_lang().code() == "ja" {
+            deckcraft_engine::set_editing_lang("ja-JP");
+            let active = session.active_index();
+            for i in 0..session.documents().len() {
+                session.set_active(i);
+                if let Some(st) = session.active_mut()
+                    && st.path.is_none()
+                    && !st.is_dirty()
+                {
+                    let mut doc = (*st.doc).clone();
+                    deckcraft_engine::cmd::file::localize_new(&mut doc);
+                    st.doc = std::sync::Arc::new(doc);
+                    st.saved_doc = st.doc.clone();
+                }
+            }
+            if let Some(i) = active {
+                session.set_active(i);
+            }
+        }
         SlideApp {
             table_pen: serde_json::json!({"width": 1.0}),
             session,
@@ -585,6 +610,8 @@ impl SlideApp {
             notes_buf: (0, usize::MAX, notes::Draft::default()),
             ui_fonts: uifonts::UiFonts::default(),
             lang_fonts_noted: false,
+            reuse: None,
+            reuse_keep: false,
             thumb_drag: None,
             selpane: selpane::State::default(),
             align_to: None,
@@ -822,6 +849,29 @@ impl SlideApp {
     /// File › Print: DeckCraft prints through a PDF. On the desktop the PDF (with the Print page's
     /// layout, slides and options) is written to the temporary folder and opened in the system's
     /// PDF viewer, which has the printers; on the web it downloads.
+    /// Print to the "Save as PDF" printer: the printout goes to a PDF file the user names (the save
+    /// window), so it stays in the workspace (PowerPoint's Microsoft Print to PDF).
+    pub fn print_to_pdf_file(&mut self, params: Value) -> bool {
+        let Some(title) = self.session.active().map(|d| d.title()) else { return false };
+        let Some(pick) = self.services.pick_save.as_mut() else { return self.print_pdf(params) };
+        let Some(path) = pick(&format!("{title}.pdf")) else { return false };
+        let mut params = if params.is_object() { params } else { json!({}) };
+        if let Some(o) = params.as_object_mut() {
+            o.insert("path".into(), json!(path));
+            o.insert("format".into(), json!("pdf"));
+        }
+        match self.run("file.export", params) {
+            Ok(_) => {
+                self.set_status(format!("Saved {path}"));
+                true
+            }
+            Err(e) => {
+                self.set_status(e);
+                false
+            }
+        }
+    }
+
     pub fn print_pdf(&mut self, params: Value) -> bool {
         let Some((title, doc)) = self.session.active().map(|d| (d.title(), d.doc.clone())) else { return false };
         let mut params = if params.is_object() { params } else { json!({}) };
@@ -1251,16 +1301,25 @@ impl SlideApp {
 
     /// Home › New Slide › Reuse Slides…: pick a presentation and insert all its slides after the
     /// current one (desktop only: the browser picker opens what it picks as a document).
+    /// Reuse Slides: choose a presentation, then insert its slides one by one from the Reuse
+    /// Slides pane, as in PowerPoint (`slide.reuse` with one slide index each time).
     fn pick_and_reuse(&mut self, keep: bool) {
         let Some(pick) = self.services.pick_open.as_mut() else {
             self.set_status("Reuse Slides needs the desktop app".to_string());
             return;
         };
         let Some(path) = pick("open") else { return };
-        match self.session.execute("slide.reuse", &json!({"path": path, "keepFormatting": keep})) {
-            Ok(r) => self.set_status(format!("Inserted {} slides from {path}", r["slides"])),
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        match deckcraft_engine::cmd::file::read_presentation_file(&path) {
+            Ok(f) => {
+                self.reuse = Some((path, std::sync::Arc::new(f.doc)));
+                self.reuse_keep = keep;
+                self.ui.pane = Some("reuse".into());
+            }
             Err(e) => self.set_status(e.to_string()),
         }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let _ = (path, keep);
     }
 
     fn pick_and_insert(&mut self, purpose: &str, cmd: &str) {
