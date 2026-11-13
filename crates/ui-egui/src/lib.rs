@@ -44,6 +44,7 @@ pub mod theme;
 pub mod thumbs;
 pub mod toast;
 pub mod uifonts;
+pub mod units;
 pub mod widgets;
 
 use std::collections::HashMap;
@@ -755,6 +756,8 @@ impl SlideApp {
             "pngAll" => ("png", "png", true),
             "jpeg" | "jpg" => ("jpg", "jpeg", false),
             "pptx" => ("pptx", "pptx", false),
+            "potx" => ("potx", "potx", false),
+            "ppsx" => ("ppsx", "ppsx", false),
             "outline" | "txt" => ("txt", "outline", false),
             "deckcraft" => ("deckcraft", "deckcraft", false),
             "gif" => ("gif", "gif", false),
@@ -849,10 +852,19 @@ impl SlideApp {
 
     fn run_ui(&mut self, id: &str, p: &Value) -> Result<Value, String> {
         match id {
-            "view.normal" => self.ui.view = ViewMode::Normal,
-            "view.outline" => self.ui.view = ViewMode::Outline,
-            "view.sorter" => self.ui.view = ViewMode::Sorter,
-            "view.notesPage" => self.ui.view = ViewMode::NotesPage,
+            // The view is also kept in the presentation, saved as viewProps' `lastView`.
+            "view.normal" | "view.outline" | "view.sorter" | "view.notesPage" => {
+                let (mode, name) = match id {
+                    "view.outline" => (ViewMode::Outline, "outline"),
+                    "view.sorter" => (ViewMode::Sorter, "sorter"),
+                    "view.notesPage" => (ViewMode::NotesPage, "notes"),
+                    _ => (ViewMode::Normal, "normal"),
+                };
+                self.ui.view = mode;
+                if self.session.active().is_some() {
+                    let _ = self.session.execute("view.mode", &json!({"view": name}));
+                }
+            }
             "view.reading" => self.start_show(self.session.active().map(|d| d.selection.slide).unwrap_or(0), true),
             "view.notes" => self.ui.notes = self.flag(p, self.ui.notes),
             "view.ruler" => self.ui.ruler = self.flag(p, self.ui.ruler),
@@ -1292,7 +1304,7 @@ impl SlideApp {
 
     pub fn save_as_dialog(&mut self, format: &str) {
         let name = self.session.active().map(|d| d.title()).unwrap_or_else(|| "Presentation".into());
-        let ext = if format == "pptx" { "pptx" } else { "deckcraft" };
+        let ext = if matches!(format, "pptx" | "potx" | "ppsx") { format } else { "deckcraft" };
         let suggested = format!("{name}.{ext}");
         if let Some(pick) = self.services.pick_save.as_mut() {
             if let Some(path) = pick(&suggested) {
@@ -1559,6 +1571,9 @@ impl SlideApp {
             self.lang_fonts_noted = true;
             if lang != i18n::Lang::EN {
                 deckcraft_render::set_prompt_text(i18n::prompt);
+                if lang.code() == "ja" {
+                    deckcraft_engine::set_editing_lang("ja-JP");
+                }
                 self.ui_fonts.note(ctx, lang.catalog_text());
             }
         }

@@ -145,13 +145,30 @@ Animations: アピール、フェード、スライドイン、フロートイ�
 
 Effect Options: 左から、右から、上から、下から、左上から…、横、縦、イン、アウト、黒いスクリーンから、スムーズ.
 
+## Units
+
+Lengths show and are typed in centimetres in Japanese (inches in English), as PowerPoint's
+Japanese version does: Size and Position, the ribbon's Height and Width (shapes, pictures,
+table rows and columns), Slide Size, paragraph indents and tab stops, and the ruler
+(`crates/ui-egui/src/units.rs`). The presentation keeps points.
+
+## Names written into presentations
+
+With the Japanese interface, text the app itself puts into a presentation is Japanese too:
+a new chart's title (グラフ タイトル), the summary zoom's slide (サマリー) and sections, new
+sections (タイトルなしのセクション / 既定のセクション), WordArt's sample (ここに文字を入力) and
+automatic dates (`ja-JP`, 2026/11/13). The CLI does the same with `DECKCRAFT_LANGUAGE=ja`.
+
 ## Contexts
 
 The same English means different things in a few places, so `ja.tsv` has a context column:
 
 - `effect`: effect names and Effect Options (`Cut` is カット here, 切り取り on Home; `Horizontal`
   is 横 here, 横書き as a text direction).
-- `chart`: Add Chart Element's menus (`Gridlines` is 目盛線 there, グリッド線 on View).
+- `chart`: Add Chart Element's menus and chart types (`Gridlines` is 目盛線 there, グリッド線 on View;
+  `Line` is 折れ線 as a chart type, 線 as a shape).
+- `quickstyle`: Shape Styles names (`Subtle Effect` is パステル there).
+- `warp`: Transform names (`Circle`, `Stop`).
 - `ribbon`: a ribbon button label that breaks over two lines differently from the same text elsewhere.
 
 ## Adding or changing a term

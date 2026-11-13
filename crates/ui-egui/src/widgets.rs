@@ -479,6 +479,12 @@ pub fn spinner(ui: &mut Ui, id: &str, value: f64, step: f64, suffix: &str, width
     out
 }
 
+/// A [`spinner`] for a length held in points, shown and typed in inches or centimetres
+/// ([`crate::units`]). Returns the new length in points.
+pub fn length_spinner(ui: &mut Ui, id: &str, pt: f64, width: f32) -> Option<f64> {
+    spinner(ui, id, crate::units::from_pt(pt), crate::units::step(), crate::units::suffix(), width).map(crate::units::to_pt)
+}
+
 pub fn fmt_num(v: f64, suffix: &str) -> String {
     let s = format!("{v:.2}");
     let s = s.trim_end_matches('0').trim_end_matches('.').to_string();

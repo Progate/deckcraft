@@ -67,6 +67,8 @@ fn title(id: &str) -> &'static str {
         "language" => "Language",
         "customShow" => "Custom Shows",
         "chartData" => "Chart Data",
+        "chartTitles" => "Chart Titles",
+        "chartFormat" => "Format Data Series",
         "trim" => "Trim Media",
         "smartart" => "Choose a SmartArt Graphic",
         "bullets" => "Bullets and Numbering",
@@ -173,7 +175,7 @@ fn restore_preferences(app: &mut SlideApp, d: &Dialog) {
 fn field(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str, default: &str) {
     let mut v = d.get(key, default);
     ui.horizontal(|ui| {
-        ui.add_sized(vec2(120.0, 20.0), egui::Label::new(crate::i18n::t(label)));
+        ui.add_sized(vec2(120.0, 20.0), egui::Label::new(crate::units::label(label)));
         ui.add(egui::TextEdit::singleline(&mut v).desired_width(180.0));
     });
     d.fields.insert(key.into(), v);
@@ -196,6 +198,93 @@ fn check(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str, default: bool) -> 
     ui.checkbox(&mut v, crate::i18n::t(label));
     d.fields.insert(key.into(), if v { "1".into() } else { "0".into() });
     v
+}
+
+/// The selected chart and its shape id.
+fn selected_chart(app: &SlideApp) -> Option<(deckcraft_model::chart::Chart, deckcraft_model::ShapeId)> {
+    app.session.active().and_then(|s| {
+        s.selected_shapes()
+            .into_iter()
+            .find_map(|x| if let deckcraft_model::ShapeKind::Chart(c) = &x.kind { Some(((**c).clone(), x.id)) } else { None })
+    })
+}
+
+/// The chart title and axis titles as text: an empty field removes that title.
+fn chart_titles_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+    let Some((c, id)) = selected_chart(app) else {
+        ui.label(tl!("Select a chart first."));
+        let (ok, cancel) = buttons(ui, "Close");
+        return ok || cancel;
+    };
+    labeled_text(ui, d, "Chart title:", "title", 260.0);
+    if c.kind != deckcraft_model::chart::ChartType::Pie && c.kind != deckcraft_model::chart::ChartType::Doughnut {
+        labeled_text(ui, d, "Horizontal axis title:", "x", 260.0);
+        labeled_text(ui, d, "Vertical axis title:", "y", 260.0);
+    }
+    if !d.fields.contains_key("seeded") {
+        d.fields.insert("seeded".into(), "1".into());
+        d.fields.insert("title".into(), c.title.clone().unwrap_or_default());
+        d.fields.insert("x".into(), c.axis_titles.0.clone().unwrap_or_default());
+        d.fields.insert("y".into(), c.axis_titles.1.clone().unwrap_or_default());
+        ui.ctx().request_repaint();
+    }
+    let (ok, cancel) = buttons(ui, "OK");
+    if ok {
+        let v = |d: &Dialog, k: &str| {
+            let t = field_of(d, k);
+            if t.trim().is_empty() { Value::Null } else { json!(t) }
+        };
+        let mut p = json!({"id": id.0, "title": v(d, "title")});
+        if d.fields.get("x").is_some_and(|_| c.kind != deckcraft_model::chart::ChartType::Pie) {
+            p["xAxisTitle"] = v(d, "x");
+            p["yAxisTitle"] = v(d, "y");
+        }
+        let _ = app.run("chart.options", p);
+    }
+    ok || cancel
+}
+
+/// Format Data Series › Fill: a colour for a series, or for one of its data points.
+fn chart_format_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+    let Some((c, id)) = selected_chart(app) else {
+        ui.label(tl!("Select a chart first."));
+        let (ok, cancel) = buttons(ui, "Close");
+        return ok || cancel;
+    };
+    let _ = d.get("series", "0");
+    let series: Vec<(String, String)> = c.series.iter().enumerate().map(|(i, s)| (i.to_string(), s.name.clone())).collect();
+    let mut points: Vec<(String, String)> = vec![(String::new(), tl!("All data points").to_string())];
+    points.extend(c.categories.iter().enumerate().map(|(i, n)| (i.to_string(), n.clone())));
+    ui.horizontal(|ui| {
+        ui.add_sized(vec2(110.0, 20.0), egui::Label::new(tl!("Series:")));
+        let pairs: Vec<(&str, &str)> = series.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        choice(ui, d, "chart_series", "series", &pairs);
+    });
+    ui.horizontal(|ui| {
+        ui.add_sized(vec2(110.0, 20.0), egui::Label::new(tl!("Data point:")));
+        let pairs: Vec<(&str, &str)> = points.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        choice(ui, d, "chart_point", "point", &pairs);
+    });
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new(tl!("Fill")).strong());
+    let scheme =
+        app.session.active().and_then(|s| s.doc.masters.first().map(|m| m.scheme())).unwrap_or_else(|| deckcraft_model::Theme::default().colors);
+    let picked = widgets_color_grid(ui, &scheme);
+    let ser = d.get("series", "0").parse::<usize>().unwrap_or(0);
+    let point = d.get("point", "").parse::<usize>().ok();
+    if let Some(color) = picked {
+        let mut p = json!({"id": id.0, "series": ser, "fill": color.map(|c| crate::ribbon::cref_param(&c))});
+        if let Some(i) = point {
+            p["point"] = json!(i);
+        }
+        let _ = app.run("chart.format", p);
+    }
+    let (ok, cancel) = buttons(ui, "Close");
+    ok || cancel
+}
+
+fn widgets_color_grid(ui: &mut Ui, scheme: &deckcraft_color::ColorScheme) -> Option<Option<deckcraft_model::ColorRef>> {
+    crate::widgets::color_grid(ui, scheme, Some("Automatic"))
 }
 
 /// A password field: the text is hidden as it is typed.
@@ -257,7 +346,7 @@ fn inspect_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     } else {
                         crate::i18n::fmt(tl!("Items were found: {n}"), &[("n", &n.to_string())])
                     };
-                    ui.label(msg);
+                    ui.label(crate::i18n::t(&(msg)));
                     if checked && n > 0 && !removed {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                             if ui.button(tl!("Remove All")).clicked() {
@@ -284,7 +373,7 @@ fn inspect_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             close = true;
         }
         let label = if inspected { tl!("Reinspect") } else { tl!("Inspect") };
-        if ui.add(egui::Button::new(label).min_size(vec2(72.0, 24.0))).clicked() {
+        if ui.add(egui::Button::new(crate::i18n::t(label)).min_size(vec2(72.0, 24.0))).clicked() {
             d.fields.insert("inspected".into(), "1".into());
             d.fields.retain(|k, _| !k.starts_with("removed."));
         }
@@ -1210,15 +1299,15 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     for (label, w, h) in deckcraft_model::defaults::SLIDE_SIZES {
                         if ui.selectable_label(preset == *label, crate::i18n::t(label)).clicked() {
                             d.fields.insert("preset".into(), label.to_string());
-                            d.fields.insert("w".into(), format!("{:.2}", w / 72.0));
-                            d.fields.insert("h".into(), format!("{:.2}", h / 72.0));
+                            d.fields.insert("w".into(), format!("{:.2}", w / crate::units::pt_per_unit()));
+                            d.fields.insert("h".into(), format!("{:.2}", h / crate::units::pt_per_unit()));
                         }
                     }
                 },
             );
-            field(ui, d, "Width (in):", "w", &format!("{:.2}", cur.width / 72.0));
-            field(ui, d, "Height (in):", "h", &format!("{:.2}", cur.height / 72.0));
-            let (w, h) = (num(d, "w", cur.width / 72.0), num(d, "h", cur.height / 72.0));
+            field(ui, d, "Width (in):", "w", &format!("{:.2}", cur.width / crate::units::pt_per_unit()));
+            field(ui, d, "Height (in):", "h", &format!("{:.2}", cur.height / crate::units::pt_per_unit()));
+            let (w, h) = (num(d, "w", cur.width / crate::units::pt_per_unit()), num(d, "h", cur.height / crate::units::pt_per_unit()));
             ui.horizontal(|ui| {
                 ui.label(tl!("Orientation:"));
                 let portrait = ui.radio(h > w, tl!("Portrait")).clicked();
@@ -1232,7 +1321,10 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             let maximize = check(ui, d, "Maximize content (else ensure fit)", "max", false);
             let (ok, cancel) = buttons(ui, "OK");
             if ok {
-                let (w, h) = (num(d, "w", cur.width / 72.0) * 72.0, num(d, "h", cur.height / 72.0) * 72.0);
+                let (w, h) = (
+                    num(d, "w", cur.width / crate::units::pt_per_unit()) * crate::units::pt_per_unit(),
+                    num(d, "h", cur.height / crate::units::pt_per_unit()) * crate::units::pt_per_unit(),
+                );
                 run(app, "design.slideSize", json!({"w": w, "h": h, "scale": if maximize { "maximize" } else { "ensureFit" }}));
             }
             ok || cancel
@@ -2161,6 +2253,8 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             }
             ok || cancel
         }
+        "chartTitles" => chart_titles_dialog(app, ui, d),
+        "chartFormat" => chart_format_dialog(app, ui, d),
         "chartData" => {
             let ch = app.session.active().and_then(|s| {
                 s.selected_shapes()
@@ -2184,39 +2278,101 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 }
                 g
             });
+            // Where each column (series) and row (category) came from, so deleting one keeps the
+            // others' colours (`chart.data`'s `from` and `categoryFrom`).
+            let mut cols: Vec<Option<usize>> =
+                d.params.get("cols").and_then(|g| serde_json::from_value(g.clone()).ok()).unwrap_or_else(|| (0..c.series.len()).map(Some).collect());
+            let mut rows: Vec<Option<usize>> = d
+                .params
+                .get("rows")
+                .and_then(|g| serde_json::from_value(g.clone()).ok())
+                .unwrap_or_else(|| (0..c.categories.len()).map(Some).collect());
+            let mut drop_col = None;
+            let mut drop_row = None;
             egui::Grid::new("chartdata").striped(true).show(ui, |ui| {
-                for row in grid.iter_mut() {
+                // Delete buttons over each series column.
+                ui.label("");
+                for k in 0..cols.len() {
+                    if ui.small_button("×").on_hover_text(tl!("Delete Series")).clicked() {
+                        drop_col = Some(k);
+                    }
+                }
+                ui.end_row();
+                for (ri, row) in grid.iter_mut().enumerate() {
                     for cell in row.iter_mut() {
                         ui.add(egui::TextEdit::singleline(cell).desired_width(70.0));
+                    }
+                    if ri > 0 && ui.small_button("×").on_hover_text(tl!("Delete Category")).clicked() {
+                        drop_row = Some(ri);
                     }
                     ui.end_row();
                 }
             });
+            if let Some(k) = drop_col.filter(|_| cols.len() > 1) {
+                for r in grid.iter_mut() {
+                    if k + 1 < r.len() {
+                        r.remove(k + 1);
+                    }
+                }
+                cols.remove(k);
+            }
+            if let Some(r) = drop_row.filter(|_| grid.len() > 2) {
+                grid.remove(r);
+                if r - 1 < rows.len() {
+                    rows.remove(r - 1);
+                }
+            }
             ui.horizontal(|ui| {
                 if ui.button(tl!("+ Row")).clicked() {
                     let n = grid.first().map(|r| r.len()).unwrap_or(2);
                     grid.push(vec![String::new(); n]);
+                    rows.push(None);
                 }
                 if ui.button(tl!("+ Series")).clicked() {
                     for r in grid.iter_mut() {
                         r.push(String::new());
                     }
+                    cols.push(None);
                 }
             });
-            d.params = json!({"grid": grid});
+            d.params = json!({"grid": grid, "cols": cols, "rows": rows});
             let (ok, cancel) = buttons(ui, "OK");
             if ok {
                 let names: Vec<String> = grid.first().map(|r| r.iter().skip(1).cloned().collect()).unwrap_or_default();
                 let cats: Vec<String> = grid.iter().skip(1).map(|r| r.first().cloned().unwrap_or_default()).collect();
-                let series: Vec<Value> = names.iter().enumerate().map(|(k, n)| json!({"name": n, "values": grid.iter().skip(1).map(|r| r.get(k + 1).and_then(|v| v.trim().parse::<f64>().ok())).collect::<Vec<_>>()})).collect();
-                run(app, "chart.data", json!({"id": id.0, "categories": cats, "series": series}));
+                let series: Vec<Value> = names
+                    .iter()
+                    .enumerate()
+                    .map(|(k, n)| {
+                        json!({
+                            "name": n,
+                            "values": grid.iter().skip(1).map(|r| r.get(k + 1).and_then(|v| v.trim().parse::<f64>().ok())).collect::<Vec<_>>(),
+                            "from": cols.get(k).copied().flatten(),
+                        })
+                    })
+                    .collect();
+                run(app, "chart.data", json!({"id": id.0, "categories": cats, "series": series, "categoryFrom": rows}));
             }
             ok || cancel
         }
         "trim" => {
             let seed = trim_seed(app.session.active());
+            // End Time is where playback stops (from the start), as in PowerPoint; the file keeps
+            // what is cut off the end. Without the clip's length only the cut can be typed.
+            let length = app.session.active().and_then(|s| {
+                s.selected_shapes().into_iter().find_map(|sh| match &sh.kind {
+                    deckcraft_model::ShapeKind::Media(m) if m.duration_ms > 0 => Some((m.duration_ms, m.trim_end_ms)),
+                    _ => None,
+                })
+            });
             field(ui, d, "Start time (s):", "start", &seed.start);
-            field(ui, d, "End trim (s):", "end", &seed.end);
+            match length {
+                Some((dur, cut)) => {
+                    ui.label(crate::i18n::fmt(tl!("Duration: {s} s"), &[("s", &ms_as_seconds(dur))]));
+                    field(ui, d, "End time (s):", "endAt", &ms_as_seconds(dur.saturating_sub(cut)));
+                }
+                None => field(ui, d, "End trim (s):", "end", &seed.end),
+            }
             field(ui, d, "Fade in (s):", "fin", &seed.fade_in);
             field(ui, d, "Fade out (s):", "fout", &seed.fade_out);
             let (ok, cancel) = buttons(ui, "OK");
@@ -2226,7 +2382,10 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     "media.options",
                     json!({
                         "trimStart": seconds_text_to_ms(&d.get("start", &seed.start)),
-                        "trimEnd": seconds_text_to_ms(&d.get("end", &seed.end)),
+                        "trimEnd": match length {
+                            Some((dur, cut)) => dur.saturating_sub(seconds_text_to_ms(&d.get("endAt", &ms_as_seconds(dur.saturating_sub(cut))))),
+                            None => seconds_text_to_ms(&d.get("end", &seed.end)),
+                        },
                         "fadeIn": seconds_text_to_ms(&d.get("fin", &seed.fade_in)),
                         "fadeOut": seconds_text_to_ms(&d.get("fout", &seed.fade_out)),
                     }),
@@ -2368,7 +2527,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 return false;
             }
             ui.horizontal(|ui| {
-                ui.label(tl!("Your name (comments):"));
+                ui.label(tl!("User name:"));
                 ui.text_edit_singleline(&mut app.session.prefs.author);
             });
             let (ok, cancel) = buttons(ui, "Done");
@@ -2447,10 +2606,10 @@ fn seed_size_position(app: &SlideApp, d: &mut Dialog) {
     let sw = num("scaleW").unwrap_or(100.0);
     let sh = num("scaleH").unwrap_or(100.0);
     let lock = d.params.get("lockAspect").and_then(Value::as_bool).unwrap_or(false);
-    put_dim(d, "x", x, num_text(x / 72.0));
-    put_dim(d, "y", y, num_text(y / 72.0));
-    put_dim(d, "w", w, num_text(w / 72.0));
-    put_dim(d, "h", h, num_text(h / 72.0));
+    put_dim(d, "x", x, num_text(x / crate::units::pt_per_unit()));
+    put_dim(d, "y", y, num_text(y / crate::units::pt_per_unit()));
+    put_dim(d, "w", w, num_text(w / crate::units::pt_per_unit()));
+    put_dim(d, "h", h, num_text(h / crate::units::pt_per_unit()));
     put_dim(d, "rot", rot, num_text(rot));
     put_dim(d, "scaleW", sw, num_text(sw));
     put_dim(d, "scaleH", sh, num_text(sh));
@@ -2466,7 +2625,7 @@ fn scale_of(pt: f64, base: f64) -> f64 {
 }
 
 fn current_points(d: &Dialog, key: &str) -> Option<f64> {
-    if edited(d, key) { parse_shown(&field_of(d, key)).map(|inches| inches * 72.0) } else { exact_of(d, key) }
+    if edited(d, key) { parse_shown(&field_of(d, key)).map(|inches| inches * crate::units::pt_per_unit()) } else { exact_of(d, key) }
 }
 
 /// Keep scale tied to size, and the other side tied when aspect is locked.
@@ -2480,26 +2639,26 @@ fn reconcile_size_fields(d: &mut Dialog) {
     let (prev_w, prev_h, prev_sw, prev_sh) = (field_of(d, "prevw"), field_of(d, "prevh"), field_of(d, "prevscaleW"), field_of(d, "prevscaleH"));
     if w_s != prev_w {
         if let Some(inches) = parse_shown(&w_s) {
-            let w_pt = inches * 72.0;
+            let w_pt = inches * crate::units::pt_per_unit();
             d.fields.insert("wPt".into(), w_pt.to_string());
             let pct = scale_of(w_pt, base_w);
             publish_dim(d, "scaleW", pct, num_text(pct));
             if lock {
                 let h_pt = if ar > 0.0 { w_pt / ar } else { w_pt };
-                publish_dim(d, "h", h_pt, num_text(h_pt / 72.0));
+                publish_dim(d, "h", h_pt, num_text(h_pt / crate::units::pt_per_unit()));
                 let hp = scale_of(h_pt, base_h);
                 publish_dim(d, "scaleH", hp, num_text(hp));
             }
         }
     } else if h_s != prev_h {
         if let Some(inches) = parse_shown(&h_s) {
-            let h_pt = inches * 72.0;
+            let h_pt = inches * crate::units::pt_per_unit();
             d.fields.insert("hPt".into(), h_pt.to_string());
             let pct = scale_of(h_pt, base_h);
             publish_dim(d, "scaleH", pct, num_text(pct));
             if lock {
                 let w_pt = h_pt * ar;
-                publish_dim(d, "w", w_pt, num_text(w_pt / 72.0));
+                publish_dim(d, "w", w_pt, num_text(w_pt / crate::units::pt_per_unit()));
                 let wp = scale_of(w_pt, base_w);
                 publish_dim(d, "scaleW", wp, num_text(wp));
             }
@@ -2508,10 +2667,10 @@ fn reconcile_size_fields(d: &mut Dialog) {
         if let Some(pct) = parse_shown(&sw_s) {
             let w_pt = base_w * pct / 100.0;
             d.fields.insert("scaleWPt".into(), pct.to_string());
-            publish_dim(d, "w", w_pt, num_text(w_pt / 72.0));
+            publish_dim(d, "w", w_pt, num_text(w_pt / crate::units::pt_per_unit()));
             if lock {
                 let h_pt = if ar > 0.0 { w_pt / ar } else { w_pt };
-                publish_dim(d, "h", h_pt, num_text(h_pt / 72.0));
+                publish_dim(d, "h", h_pt, num_text(h_pt / crate::units::pt_per_unit()));
                 publish_dim(d, "scaleH", pct, num_text(pct));
             }
         }
@@ -2519,10 +2678,10 @@ fn reconcile_size_fields(d: &mut Dialog) {
         if let Some(pct) = parse_shown(&sh_s) {
             let h_pt = base_h * pct / 100.0;
             d.fields.insert("scaleHPt".into(), pct.to_string());
-            publish_dim(d, "h", h_pt, num_text(h_pt / 72.0));
+            publish_dim(d, "h", h_pt, num_text(h_pt / crate::units::pt_per_unit()));
             if lock {
                 let w_pt = h_pt * ar;
-                publish_dim(d, "w", w_pt, num_text(w_pt / 72.0));
+                publish_dim(d, "w", w_pt, num_text(w_pt / crate::units::pt_per_unit()));
                 publish_dim(d, "scaleW", pct, num_text(pct));
             }
         }
@@ -2531,7 +2690,7 @@ fn reconcile_size_fields(d: &mut Dialog) {
         && let Some(w_pt) = current_points(d, "w")
     {
         let h_pt = if ar > 0.0 { w_pt / ar } else { w_pt };
-        publish_dim(d, "h", h_pt, num_text(h_pt / 72.0));
+        publish_dim(d, "h", h_pt, num_text(h_pt / crate::units::pt_per_unit()));
         let hp = scale_of(h_pt, base_h);
         publish_dim(d, "scaleH", hp, num_text(hp));
         let wp = scale_of(w_pt, base_w);
@@ -2547,7 +2706,7 @@ fn reconcile_size_fields(d: &mut Dialog) {
 fn shown_points(d: &Dialog, key: &str, label: &str) -> Result<f64, String> {
     if edited(d, key) {
         let n = parse_shown(&field_of(d, key)).ok_or_else(|| format!("{label} must be a number"))?;
-        return Ok(n * 72.0);
+        return Ok(n * crate::units::pt_per_unit());
     }
     exact_of(d, key).ok_or_else(|| format!("{label} must be a number"))
 }
@@ -2594,7 +2753,7 @@ fn size_position_value(d: &Dialog) -> Result<Value, String> {
 fn text_row(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str) {
     let mut v = field_of(d, key);
     ui.horizontal(|ui| {
-        ui.add_sized(vec2(148.0, 20.0), egui::Label::new(crate::i18n::t(label)));
+        ui.add_sized(vec2(148.0, 20.0), egui::Label::new(crate::units::label(label)));
         ui.add(egui::TextEdit::singleline(&mut v).desired_width(96.0));
     });
     d.fields.insert(key.into(), v);
@@ -3087,7 +3246,7 @@ fn pt_text(v: Option<&Value>, default: f64) -> String {
 }
 
 fn inches_text(v: Option<&Value>) -> String {
-    crate::widgets::fmt_num(v.and_then(Value::as_f64).filter(|n| n.is_finite()).unwrap_or(0.0) / 72.0, "")
+    crate::widgets::fmt_num(v.and_then(Value::as_f64).filter(|n| n.is_finite()).unwrap_or(0.0) / crate::units::pt_per_unit(), "")
 }
 
 fn seed_paragraph_fields(d: &mut Dialog) {
@@ -3105,9 +3264,9 @@ fn seed_paragraph_fields(d: &mut Dialog) {
 }
 
 fn paragraph_return_params(d: &mut Dialog) -> Value {
-    let before = finite_pt(&d.get("before", "0")).unwrap_or(0.0) * 72.0;
-    let after = finite_pt(&d.get("after", "0")).unwrap_or(0.0) * 72.0;
-    let by = finite_pt(&d.get("by", "0")).unwrap_or(0.0) * 72.0;
+    let before = finite_pt(&d.get("before", "0")).unwrap_or(0.0) * crate::units::pt_per_unit();
+    let after = finite_pt(&d.get("after", "0")).unwrap_or(0.0) * crate::units::pt_per_unit();
+    let by = finite_pt(&d.get("by", "0")).unwrap_or(0.0) * crate::units::pt_per_unit();
     let space_before = finite_pt(&d.get("spaceBefore", "0")).unwrap_or(0.0);
     let space_after = finite_pt(&d.get("spaceAfter", "0")).unwrap_or(0.0);
     let line_value = finite_pt(&d.get("lineValue", "1")).unwrap_or(1.0);
@@ -3267,10 +3426,10 @@ fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         };
         let mut params = json!({
             "align": d.get("align", "left"),
-            "indentLeft": before_in * 72.0,
-            "indentRight": after_in * 72.0,
+            "indentLeft": before_in * crate::units::pt_per_unit(),
+            "indentRight": after_in * crate::units::pt_per_unit(),
             "special": d.get("special", "none"),
-            "specialBy": by_in * 72.0,
+            "specialBy": by_in * crate::units::pt_per_unit(),
             "spaceBefore": space_before,
             "spaceAfter": space_after,
             "spaceBeforeKind": if d.get("spaceBefore", "") == d.get("spaceBeforeSeed", "") { d.params.get("spaceBeforeKind").and_then(Value::as_str).unwrap_or("pts") } else { "pts" },
@@ -3299,10 +3458,14 @@ fn tabs_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         let r = if d.params.get("tabs").is_some() { d.params.clone() } else { app.session.execute("format.ruler", &json!({})).unwrap_or_default() };
         let stops: Vec<String> = r["tabs"]
             .as_array()
-            .map(|a| a.iter().filter_map(|t| Some(format!("{}:{}", t["pos"].as_f64()? / 72.0, t["align"].as_str().unwrap_or("l")))).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| Some(format!("{}:{}", t["pos"].as_f64()? / crate::units::pt_per_unit(), t["align"].as_str().unwrap_or("l"))))
+                    .collect()
+            })
             .unwrap_or_default();
         d.fields.insert("stops".into(), stops.join("|"));
-        d.fields.insert("default".into(), format!("{}", r["defaultTab"].as_f64().unwrap_or(72.0) / 72.0));
+        d.fields.insert("default".into(), format!("{}", r["defaultTab"].as_f64().unwrap_or(72.0) / crate::units::pt_per_unit()));
     }
     let mut stops: Vec<(f64, String)> = d
         .get("stops", "")
@@ -3335,7 +3498,7 @@ fn tabs_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(tl!("Tab stop position (in):"));
+        ui.label(crate::i18n::t(&(crate::units::label("Tab stop position (in):"))));
         let mut v = d.get("newpos", "");
         ui.add(egui::TextEdit::singleline(&mut v).desired_width(60.0));
         d.fields.insert("newpos".into(), v);
@@ -3365,8 +3528,8 @@ fn tabs_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     d.fields.insert("stops".into(), stops.iter().map(|(p, a)| format!("{p}:{a}")).collect::<Vec<_>>().join("|"));
     let (ok, cancel) = buttons(ui, "OK");
     if ok {
-        let set: Vec<Value> = stops.iter().map(|(p, a)| json!({"pos": p * 72.0, "align": a})).collect();
-        let dt = num(d, "default", 1.0).clamp(0.02, 56.0) * 72.0;
+        let set: Vec<Value> = stops.iter().map(|(p, a)| json!({"pos": p * crate::units::pt_per_unit(), "align": a})).collect();
+        let dt = num(d, "default", 1.0).clamp(0.02, 56.0) * crate::units::pt_per_unit();
         if let Err(e) = app.run("format.tabs", json!({"set": set, "defaultTab": dt})) {
             app.set_status(e);
         } else if let Some(ret) = d.params.get_mut("returnParams").and_then(Value::as_object_mut) {

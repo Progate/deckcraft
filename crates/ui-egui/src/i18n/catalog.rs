@@ -23,7 +23,9 @@ pub struct Entry {
 /// - `effect`: the name of a transition or animation effect, which may need other wording than
 ///   the same English word elsewhere ("Wipe", "Split"); it falls back to the plain entry.
 /// - `chart`: Add Chart Element's menus, where "Gridlines", "Top"… name chart parts.
-pub const CONTEXTS: &[&str] = &["ribbon", "effect", "chart"];
+/// - `quickstyle`: Shape Styles names (`Subtle Effect` is パステル there, not a SmartArt style).
+/// - `warp`: Transform (text effect) names (`Circle`, `Stop` name shapes of text there).
+pub const CONTEXTS: &[&str] = &["ribbon", "effect", "chart", "quickstyle", "warp"];
 
 /// A parsed catalog. Values are owned for the life of the process (catalogs are built once).
 #[derive(Debug, Default)]

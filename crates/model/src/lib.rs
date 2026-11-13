@@ -1026,6 +1026,10 @@ pub struct Presentation {
     /// Password to modify (File › Save As › Tools › General Options).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modify_verifier: Option<ModifyVerifier>,
+    /// The view the presentation was last saved in (`p:viewPr lastView`: `sldView`,
+    /// `outlineView`, `sldSorterView`, `notesView`…); `None` is Normal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_view: Option<String>,
 }
 
 /// A drawing guide: a vertical line at `pos` points from the slide's left edge, or a horizontal

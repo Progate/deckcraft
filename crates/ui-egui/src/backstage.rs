@@ -215,8 +215,10 @@ impl Backstage {
 }
 
 /// Save As and Change File Type: (id for [`SlideApp::export_as`], label, detail).
-pub const SAVE_TYPES: [(&str, &str, &str); 6] = [
+pub const SAVE_TYPES: [(&str, &str, &str); 8] = [
     ("pptx", "PowerPoint Presentation (*.pptx)", "Opens in PowerPoint and other presentation apps"),
+    ("potx", "PowerPoint Template (*.potx)", "A starting point for new presentations"),
+    ("ppsx", "PowerPoint Show (*.ppsx)", "Opens straight into the slide show"),
     ("deckcraft", "DeckCraft Presentation (*.deckcraft)", "DeckCraft's own format: everything is kept"),
     ("pdf", "PDF (*.pdf)", "A fixed copy that keeps its layout on any device"),
     ("outline", "Outline (*.txt)", "The slide titles and bullet text as plain text"),
@@ -1005,7 +1007,7 @@ fn save_as(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
         let save = ui.add(egui::Button::new(RichText::new(crate::i18n::t(label)).color(t.accent_text)).fill(t.accent).min_size(vec2(84.0, 26.0)));
         if save.on_hover_text(crate::i18n::t(if web { "Download the file" } else { "Choose where to save" })).clicked() {
             let fmt = bs.file_type;
-            let done = if matches!(fmt, "pptx" | "deckcraft") {
+            let done = if matches!(fmt, "pptx" | "potx" | "ppsx" | "deckcraft") {
                 let before = app.session.active().map(|d| (d.path.clone(), d.is_dirty()));
                 app.save_as_dialog(fmt);
                 web || app.session.active().map(|d| (d.path.clone(), d.is_dirty())) != before
@@ -1017,7 +1019,7 @@ fn save_as(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
             }
         }
         // Tools › General Options: the password to modify, as in PowerPoint's Save As window.
-        let tools = widgets::drop_button(ui, "Tools", vec2(84.0, 26.0), true);
+        let tools = widgets::drop_button(ui, tl!("Tools"), vec2(84.0, 26.0), true);
         egui::Popup::menu(&tools).show(|ui| {
             if ui.button(tl!("General Options…")).clicked() {
                 let _ = app.run("app.dialog", json!({"id": "generalOptions"}));
@@ -1441,6 +1443,11 @@ fn account(app: &mut SlideApp, ui: &mut Ui) {
             ui.add_space(16.0);
             heading(ui, "User Information");
             dim(ui, "DeckCraft has no accounts: there is nothing to sign in to, and your presentations stay on your device.");
+            // The user name new comments are by (File › Options › General in PowerPoint).
+            ui.horizontal(|ui| {
+                ui.label(tl!("User name:"));
+                ui.add(egui::TextEdit::singleline(&mut app.session.prefs.author).desired_width(220.0));
+            });
         });
         ui.add_space(40.0);
         ui.vertical(|ui| {

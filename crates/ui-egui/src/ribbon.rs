@@ -1117,6 +1117,14 @@ fn quick_styles(app: &mut SlideApp, ui: &mut Ui) {
             for (k, slot) in slots.iter().enumerate() {
                 let c = theme::to_color32(sc.get(*slot));
                 let (rect, resp) = ui.allocate_exact_size(vec2(40.0, 26.0), Sense::click());
+                // Named as PowerPoint's Shape Styles gallery names them: the style, then the colour.
+                let style =
+                    ["Colored Outline", "Colored Fill", "Subtle Effect", "Moderate Effect", "Intense Effect", "Light 1 Outline, Colored Fill"]
+                        .get(row)
+                        .copied()
+                        .unwrap_or("");
+                let colour = if k == 0 { "Dark 1".to_string() } else { format!("Accent {k}") };
+                let resp = resp.on_hover_text(format!("{} - {}", crate::i18n::tc("quickstyle", style), crate::i18n::t(&colour)));
                 let p = ui.painter();
                 let (fill, stroke, text) = match row {
                     0 => (Color32::WHITE, c, Color32::BLACK),
@@ -1294,9 +1302,10 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
                     ui.separator();
                 }
                 if let Some(k) = k
-                    && ui.button(crate::i18n::t(k.label())).clicked()
+                    && ui.button(crate::i18n::tc("chart", k.label())).clicked()
                 {
-                    run(app, "insert.chart", json!({"type": format!("{k:?}")}));
+                    // The new chart's title is in the interface language, as PowerPoint writes it.
+                    run(app, "insert.chart", json!({"type": format!("{k:?}"), "title": tl!("Chart Title")}));
                 }
             }
         });
@@ -2019,13 +2028,13 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
                     .button(crate::i18n::t(
                         &(format!(
                             "{} — {}",
-                            a.1,
-                            match a.2 {
+                            crate::i18n::tc("effect", a.1),
+                            crate::i18n::t(match a.2 {
                                 AnimClass::Entrance => "Entrance",
                                 AnimClass::Emphasis => "Emphasis",
                                 AnimClass::Exit => "Exit",
                                 _ => "Motion",
-                            }
+                            })
                         )),
                     ))
                     .clicked()
@@ -2215,6 +2224,7 @@ fn review(app: &mut SlideApp, ui: &mut Ui) {
     });
     group(ui, |ui| {
         big(app, ui, Icon::Accessibility, "Check\nAccessibility", "app.dialog", json!({"id": "accessibility"}));
+        big(app, ui, Icon::SelectionPane, "Reading\nOrder", "view.pane", json!({"pane": "readingOrder", "toggle": true}));
     });
     group(ui, |ui| {
         let r = big_button(ui, Icon::Translate, "Translate", false);
@@ -2267,7 +2277,7 @@ fn view(app: &mut SlideApp, ui: &mut Ui) {
     group(ui, |ui| {
         let in_master = app.session.active().is_some_and(|d| d.selection.target != Target::Slides);
         if big_button_ex(ui, Icon::SlideMaster, "Slide\nMaster", true, false, in_master).0.clicked() {
-            let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({}));
+            let _ = app.run(if in_master { "view.closeMaster" } else { "view.slideMaster" }, json!({"followSlide": true}));
         }
         let in_handout = app.session.active().is_some_and(|d| d.selection.target == Target::Handout);
         if big_button_ex(ui, Icon::HandoutMaster, "Handout\nMaster", true, false, in_handout).0.clicked() {
@@ -2397,7 +2407,7 @@ fn warp_tile(ui: &mut Ui, preset: &str, label: &str, selected: bool) -> bool {
         ui.painter().rect_filled(rect, CornerRadius::same(3), t.hover);
     }
     paint_warp_icon(ui.painter(), rect.shrink(4.0), (!preset.is_empty()).then_some(preset), t.text);
-    resp.on_hover_text(crate::i18n::t(label)).clicked()
+    resp.on_hover_text(crate::i18n::tc("warp", label)).clicked()
 }
 
 /// The preset's guides, or two straight lines for No Transform.
@@ -2618,14 +2628,14 @@ fn size_group(app: &mut SlideApp, ui: &mut Ui) {
             };
             ui.horizontal(|ui| {
                 ui.label(tl!("Height:"));
-                if let Some(v) = widgets::spinner(ui, "sh", x.h / 72.0, 0.1, "\"", 54.0) {
-                    run(app, "shape.resize", json!({"h": v.max(0.0) * 72.0}));
+                if let Some(v) = widgets::length_spinner(ui, "sh", x.h, 54.0) {
+                    run(app, "shape.resize", json!({"h": v.max(0.0)}));
                 }
             });
             ui.horizontal(|ui| {
                 ui.label(tl!("Width: "));
-                if let Some(v) = widgets::spinner(ui, "sw", x.w / 72.0, 0.1, "\"", 54.0) {
-                    run(app, "shape.resize", json!({"w": v.max(0.0) * 72.0}));
+                if let Some(v) = widgets::length_spinner(ui, "sw", x.w, 54.0) {
+                    run(app, "shape.resize", json!({"w": v.max(0.0)}));
                 }
             });
         });
@@ -3074,7 +3084,33 @@ fn table_layout(app: &mut SlideApp, ui: &mut Ui) {
         big(app, ui, Icon::MergeCells, "Merge\nCells", "table.merge", json!({}));
         big(app, ui, Icon::SplitCells, "Split\nCells", "table.split", json!({}));
     });
+    // Cell Size: the current row's height and column's width, typed in inches or centimetres.
+    let cell_size = app.session.active().and_then(|d| {
+        let cell = d.selection.text.as_ref().and_then(|t| t.cell).or_else(|| d.selection.cells.map(|c| c.1))?;
+        d.selected_shapes().into_iter().find_map(|s| match &s.kind {
+            ShapeKind::Table(t) => Some((t.rows.get(cell.0)?.height, *t.cols.get(cell.1)?, cell)),
+            _ => None,
+        })
+    });
     group(ui, |ui| {
+        rows(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(tl!("Height:"));
+                if let Some((h, _, (r, _))) = cell_size
+                    && let Some(v) = widgets::length_spinner(ui, "table_row_h", h, 54.0)
+                {
+                    run(app, "table.rowHeight", json!({"row": r, "height": v.max(4.0)}));
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(tl!("Width: "));
+                if let Some((_, w, (_, c))) = cell_size
+                    && let Some(v) = widgets::length_spinner(ui, "table_col_w", w, 54.0)
+                {
+                    run(app, "table.columnWidth", json!({"col": c, "width": v.max(4.0)}));
+                }
+            });
+        });
         rows(ui, |ui| {
             small(app, ui, Icon::DistributeV, "Distribute Rows", "table.distributeRows", json!({}));
             small(app, ui, Icon::DistributeH, "Distribute Columns", "table.distributeColumns", json!({}));
@@ -3088,12 +3124,9 @@ fn table_layout(app: &mut SlideApp, ui: &mut Ui) {
                 toggle(app, ui, Icon::AlignRight, "Align Right", "format.alignRight", false);
             });
             ui.horizontal(|ui| {
-                for (l, a) in [("Top", "top"), ("Center", "middle"), ("Bottom", "bottom")] {
-                    if ui
-                        .small_button(crate::i18n::t(l))
-                        .on_hover_text(crate::i18n::t(&(format!("Align text to the {l} of the cell").to_lowercase())))
-                        .clicked()
-                    {
+                // Vertical alignment in the cell, named as PowerPoint names it (上揃え / 上下中央揃え / 下揃え).
+                for (l, a) in [("Align Top", "top"), ("Center Vertically", "middle"), ("Align Bottom", "bottom")] {
+                    if ui.small_button(crate::i18n::t(l)).on_hover_text(crate::i18n::t(l)).clicked() {
                         run(app, "table.cellAlign", json!({"anchor": a}));
                     }
                 }
@@ -3136,6 +3169,11 @@ fn chart_layouts_group(app: &mut SlideApp, ui: &mut Ui) {
                     p["id"] = json!(id);
                     run(app, "chart.options", p);
                 };
+                if ui.button(tl!("Edit Titles…")).clicked() {
+                    app.dialog = Some(crate::dialogs::Dialog::new("chartTitles"));
+                    ui.close();
+                }
+                ui.separator();
                 ui.menu_button(tl!("Axis Titles"), |ui| {
                     if widgets::check_item(ui, crate::i18n::tc("chart", "Primary Horizontal"), true, c.axis_titles.0.is_some()).clicked() {
                         set(app, json!({"xAxisTitle": if c.axis_titles.0.is_some() { Value::Null } else { json!(tl!("Axis Title")) }}));
@@ -3186,6 +3224,9 @@ fn chart_layouts_group(app: &mut SlideApp, ui: &mut Ui) {
                 });
             });
         }
+        if big_button(ui, Icon::ChartStyles, "Format Data\nSeries", on).clicked() {
+            app.dialog = Some(crate::dialogs::Dialog::new("chartFormat"));
+        }
         let r = big_button(ui, Icon::Layout, "Quick\nLayout", on);
         r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, on, "Quick Layout"));
         egui::Popup::menu(&r).show(|ui| {
@@ -3208,7 +3249,7 @@ fn chart_design(app: &mut SlideApp, ui: &mut Ui) {
                     ui.separator();
                     continue;
                 };
-                if ui.button(crate::i18n::t(k.label())).clicked() {
+                if ui.button(crate::i18n::tc("chart", k.label())).clicked() {
                     // Replace the chart's type keeping its data.
                     if let Some(id) = app.session.active().and_then(|d| d.selection.shapes.first().copied()) {
                         let _ = app.run("chart.type", json!({"id": id.0, "type": format!("{k:?}")}));
@@ -3678,10 +3719,10 @@ fn smooth_corners_row(app: &mut SlideApp, ui: &mut egui::Ui) {
     }
     let usable = radius.is_some() || ui.data(|d| d.get_temp::<(f64, f64)>(key)).is_some();
     ui.horizontal(|ui| {
-        ui.label("Smooth Corners");
+        ui.label(tl!("Smooth Corners"));
         let mut pct = state.1;
         let resp = ui.add_enabled(usable, egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%").integer());
-        let resp = if usable { resp } else { resp.on_disabled_hover_text("For rectangles and rounded rectangles") };
+        let resp = if usable { resp } else { resp.on_disabled_hover_text(tl!("For rectangles and rounded rectangles")) };
         if resp.changed() {
             state.1 = pct;
             ui.data_mut(|d| d.insert_temp(key, state));
@@ -3701,7 +3742,7 @@ fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
     let (mut kind, mut picked): (u8, Vec<usize>) = ui.data_mut(|d| d.get_temp(id).unwrap_or((0, vec![])));
     ui.horizontal(|ui| {
         for (k, label) in [(0u8, "Slide Zoom"), (1, "Section Zoom"), (2, "Summary Zoom")] {
-            if ui.selectable_label(kind == k, label).clicked() && kind != k {
+            if ui.selectable_label(kind == k, crate::i18n::t(label)).clicked() && kind != k {
                 kind = k;
                 picked.clear();
             }
@@ -3721,12 +3762,12 @@ fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
             .collect()
     };
     if items.is_empty() {
-        ui.label(if kind == 1 { "The presentation has no sections. Add one with Home › Section." } else { "No slides." });
+        ui.label(crate::i18n::t(if kind == 1 { "The presentation has no sections. Add one with Home › Section." } else { "No slides." }));
     }
     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
         for (i, label) in items.iter().enumerate() {
             let mut on = picked.contains(&i);
-            if ui.checkbox(&mut on, label).changed() {
+            if ui.checkbox(&mut on, crate::i18n::t(label)).changed() {
                 if on {
                     picked.push(i);
                 } else {
@@ -3737,12 +3778,13 @@ fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
     });
     ui.data_mut(|d| d.insert_temp(id, (kind, picked.clone())));
     ui.separator();
-    if ui.add_enabled(!picked.is_empty(), egui::Button::new("Insert")).clicked() {
+    if ui.add_enabled(!picked.is_empty(), egui::Button::new(tl!("Insert"))).clicked() {
         let mut v = picked.clone();
         v.sort_unstable();
         let p = match kind {
             1 => json!({"kind": "section", "sections": v}),
-            2 => json!({"kind": "summary", "slides": v}),
+            // The summary slide and its section are named in the interface language (サマリー).
+            2 => json!({"kind": "summary", "slides": v, "title": tl!("Summary"), "sectionName": tl!("Summary Section")}),
             _ => json!({"kind": "slide", "slides": v}),
         };
         run(app, "insert.zoom", p);
@@ -3756,22 +3798,22 @@ fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
 fn compress_menu(app: &mut SlideApp, ui: &mut Ui) {
     let id = egui::Id::new("compress_pictures_opts");
     let (mut ppi, mut only_selected, mut delete_cropped): (u32, bool, bool) = ui.data_mut(|d| d.get_temp(id).unwrap_or((220, true, true)));
-    ui.label(egui::RichText::new("Compression options").strong());
-    ui.checkbox(&mut only_selected, "Apply only to this picture");
-    ui.checkbox(&mut delete_cropped, "Delete cropped areas of pictures");
+    ui.label(egui::RichText::new(tl!("Compression options")).strong());
+    ui.checkbox(&mut only_selected, tl!("Apply only to this picture"));
+    ui.checkbox(&mut delete_cropped, tl!("Delete cropped areas of pictures"));
     ui.separator();
-    ui.label(egui::RichText::new("Resolution").strong());
+    ui.label(egui::RichText::new(tl!("Resolution")).strong());
     for (v, label) in [
         (330, "HD (330 ppi): good quality for high-definition displays"),
         (220, "Print (220 ppi): excellent quality on most printers and screens"),
         (150, "Web (150 ppi): good for web pages and projectors"),
         (96, "E-mail (96 ppi): minimise document size for sharing"),
     ] {
-        ui.radio_value(&mut ppi, v, label);
+        ui.radio_value(&mut ppi, v, crate::i18n::t(label));
     }
     ui.data_mut(|d| d.insert_temp(id, (ppi, only_selected, delete_cropped)));
     ui.separator();
-    if ui.button("Compress").clicked() {
+    if ui.button(tl!("Compress")).clicked() {
         let p = json!({"ppi": ppi, "deleteCropped": delete_cropped, "all": !only_selected});
         match app.session.execute("picture.compress", &p) {
             Ok(r) => {

@@ -10,7 +10,16 @@ use crate::{Result, Session, Target, UiRequest};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!("comment.add", "New Comment", ["Review", "Comments"], Some("Cmd+Alt+M"), "{text, x?, y?, id?: shape}", has_slide, add),
+        cmd!(
+            "comment.add",
+            "New Comment",
+            ["Review", "Comments"],
+            Some("Cmd+Alt+M"),
+            "{text, x?, y?, id?: shape, author?: (default: File › Options user name)}",
+            has_slide,
+            add
+        ),
+        cmd!(noundo "file.options", "Options", ["File"], None, "{userName?: string (comment author, File › Options › General)} → {userName}", always, options),
         cmd!("comment.reply", "Reply", ["Comments"], None, "{index, text}", has_slide, reply),
         cmd!("comment.delete", "Delete Comment", ["Review", "Comments"], None, "{index? | all?: bool}", has_slide, delete),
         cmd!("comment.resolve", "Resolve Thread", ["Comments"], None, "{index, resolved?: bool}", has_slide, resolve),
@@ -111,7 +120,7 @@ fn now() -> String {
 
 fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let text = str_param(p, "text").ok_or_else(|| bad("comment.add", "missing `text`"))?.to_string();
-    let author = s.prefs.author.clone();
+    let author = str_param(p, "author").map(String::from).unwrap_or_else(|| s.prefs.author.clone());
     let shape = id_param(p, "id", "comment.add")?.or_else(|| s.active().and_then(|d| d.selection.shapes.first().copied()));
     let (x, y) = (f64_or(p, "x", 10.0), f64_or(p, "y", 10.0));
     s.edit(|doc, sel| {
@@ -120,6 +129,14 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
         sl.comments.push(Comment { author: author.clone(), initials, text, date: now(), x, y, resolved: false, replies: vec![], shape });
         Ok(json!({"index": sl.comments.len() - 1}))
     })
+}
+
+/// File › Options › General › User name: who new comments and replies are by.
+fn options(s: &mut Session, p: &Value) -> Result<Value> {
+    if let Some(name) = str_param(p, "userName") {
+        s.prefs.author = name.chars().take(256).collect();
+    }
+    Ok(json!({"userName": s.prefs.author}))
 }
 
 fn reply(s: &mut Session, p: &Value) -> Result<Value> {
@@ -233,6 +250,14 @@ fn accessibility(s: &mut Session, _p: &Value) -> Result<Value> {
     for (i, sl) in st.doc.slides.iter().enumerate() {
         if sl.title().trim().is_empty() {
             out.push(json!({"slide": i, "issue": "Missing slide title"}));
+        }
+        // Reading order follows the order of the shapes on the slide: a screen reader should
+        // meet the title first.
+        let first = sl.shapes.iter().find(|sh| !sh.hidden && !sh.decorative);
+        if let Some(title) = sl.shapes.iter().find(|sh| sh.ph_type().is_some_and(|k| k.is_title()) && sh.text.as_ref().is_some_and(|t| !t.is_empty()))
+            && first.is_some_and(|f| f.id != title.id)
+        {
+            out.push(json!({"slide": i, "shape": title.id, "name": title.name, "issue": "Check reading order: the title is not read first"}));
         }
         deckcraft_model::walk(&sl.shapes, &mut |sh, _| {
             let needs_alt = matches!(

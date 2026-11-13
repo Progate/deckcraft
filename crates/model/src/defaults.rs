@@ -518,6 +518,7 @@ pub fn blank_presentation(size: Size, theme: Theme, title_slide: bool) -> Presen
         guides: vec![],
         raw_ext: None,
         modify_verifier: None,
+        last_view: None,
     };
     if title_slide {
         // A fresh deck starts at id 256 and this builds a handful of ids, so the slide always

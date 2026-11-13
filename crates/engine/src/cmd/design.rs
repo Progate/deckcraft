@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use deckcraft_geom::Size;
-use deckcraft_model::text::{Run, RunKind, TextBody};
+use deckcraft_model::text::{Run, RunKind, RunProps, TextBody};
 use deckcraft_model::theme::{builtin_color_schemes, builtin_font_schemes, builtin_format_schemes, builtin_themes};
 use deckcraft_model::{Background, Fill, PhType, Presentation, Shape, ShapeId, defaults};
 use serde_json::{Value, json};
@@ -66,7 +66,16 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             header_footer
         ),
-        cmd!(noundo "view.slideMaster", "Slide Master", ["View", "Master Views"], None, "{master?: index, layout?: index}", has_doc, master_view),
+        cmd!(
+            noundo "view.mode",
+            "Presentation Views",
+            ["View", "Presentation Views"],
+            None,
+            "{view: normal|outline|sorter|notes} (saved as viewProps lastView; the screen's view is the app's)",
+            has_doc,
+            view_mode
+        ),
+        cmd!(noundo "view.slideMaster", "Slide Master", ["View", "Master Views"], None, "{master?: index, layout?: index, followSlide?: bool} (no keys: the slide master itself; followSlide: the current slide's layout, as the ribbon opens it)", has_doc, master_view),
         cmd!(
             "view.handoutMaster",
             "Handout Master",
@@ -880,7 +889,7 @@ fn header_footer(s: &mut Session, p: &Value) -> Result<Value> {
                             },
                             PhType::Date if hf.date_text.is_empty() => TextBody {
                                 paragraphs: vec![deckcraft_model::Paragraph {
-                                    runs: vec![Run { text: today(), props: Default::default(), kind: RunKind::Field { field: "datetime1".into() } }],
+                                    runs: vec![Run { text: today(), props: date_props(), kind: RunKind::Field { field: "datetime1".into() } }],
                                     ..Default::default()
                                 }],
                                 ..Default::default()
@@ -920,7 +929,10 @@ fn header_footer(s: &mut Session, p: &Value) -> Result<Value> {
 fn set_date(sh: &mut Shape, fixed: &str) {
     let runs = || sh.text.iter().flat_map(|t| &t.paragraphs).flat_map(|p| &p.runs);
     let has_field = runs().any(|r| matches!(&r.kind, RunKind::Field { field } if deckcraft_text::datetime::is_date_field(field)));
-    let props = runs().next().map(|r| r.props.clone()).unwrap_or_default();
+    let mut props = runs().next().map(|r| r.props.clone()).unwrap_or_default();
+    if props.lang.is_none() && fixed.is_empty() {
+        props.lang = date_props().lang;
+    }
     let (text, kind) = match fixed {
         "" if has_field => return,
         "" => (today(), RunKind::Field { field: "datetime1".into() }),
@@ -940,7 +952,13 @@ pub fn today() -> String {
 /// What date field `kind` shows now (empty if unknown or there is no clock).
 pub fn date_field_text(kind: &str) -> String {
     use deckcraft_text::datetime::{DateTime, field_text};
-    DateTime::now_local().and_then(|now| field_text(kind, None, now)).unwrap_or_default()
+    DateTime::now_local().and_then(|now| field_text(kind, crate::editing_lang(), now)).unwrap_or_default()
+}
+
+/// Run formatting for a new automatic date: in the editing language ([`crate::editing_lang`]),
+/// so `datetime1` reads `2026/11/13` in Japanese as PowerPoint's Japanese version writes it.
+fn date_props() -> RunProps {
+    RunProps { lang: crate::editing_lang().map(String::from), ..Default::default() }
 }
 
 /// Days since 1970-01-01 → (year, month, day) (Howard Hinnant's algorithm).
@@ -957,17 +975,42 @@ pub fn civil(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// Record the presentation view (`p:viewPr lastView`). Like PowerPoint, switching views doesn't
+/// make the presentation "edited": a clean presentation stays clean.
+fn view_mode(s: &mut Session, p: &Value) -> Result<Value> {
+    let last = match str_param(p, "view").unwrap_or("normal") {
+        "normal" => None,
+        "outline" => Some("outlineView"),
+        "sorter" => Some("sldSorterView"),
+        "notes" => Some("notesView"),
+        other => return Err(bad("view.mode", format!("unknown view `{other}`; use normal, outline, sorter or notes"))),
+    };
+    let st = s.doc_mut()?;
+    if st.doc.last_view.as_deref() == last {
+        return ok();
+    }
+    let clean = !st.is_dirty();
+    let mut doc = (*st.doc).clone();
+    doc.last_view = last.map(String::from);
+    st.doc = std::sync::Arc::new(doc);
+    if clean {
+        st.saved_doc = st.doc.clone();
+    }
+    st.revision += 1;
+    ok()
+}
+
 fn master_view(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
     let mi = usize_param(p, "master").unwrap_or_else(|| master_index(&st.doc, &st.selection));
-    // A master thumbnail sends `{master}` and means the master itself. `{master, layout}` selects
-    // that layout. With neither key, follow the current slide's layout.
-    let layout = if p.get("master").is_some() && p.get("layout").is_none() {
-        None
-    } else {
-        usize_param(p, "layout")
-            .or_else(|| st.current_slide().and_then(|sl| st.doc.masters.get(mi).and_then(|m| m.layouts.iter().position(|l| l.id == sl.layout))))
-    };
+    // `{layout}` selects that layout; `{followSlide: true}` (the ribbon's Slide Master button)
+    // the current slide's layout, as PowerPoint opens the view. Otherwise the master itself, so a
+    // script's plain `view.slideMaster` edits the parent master's styles.
+    let layout = usize_param(p, "layout").or_else(|| {
+        bool_or(p, "followSlide", false)
+            .then(|| st.current_slide().and_then(|sl| st.doc.masters.get(mi).and_then(|m| m.layouts.iter().position(|l| l.id == sl.layout))))
+            .flatten()
+    });
     let target = match layout {
         Some(l) => Target::Layout { master: mi, layout: l },
         None => Target::Master { master: mi },
@@ -1822,8 +1865,10 @@ mod browse_theme_tests {
         let mut s = Session::with_new();
         let blank = s.doc().unwrap().doc.masters[0].layouts.iter().position(|l| l.name == "Blank").unwrap();
 
-        s.execute("view.slideMaster", &json!({})).unwrap();
+        s.execute("view.slideMaster", &json!({"followSlide": true})).unwrap();
         assert_eq!(s.doc().unwrap().selection.target, Target::Layout { master: 0, layout: 0 });
+        s.execute("view.slideMaster", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().selection.target, Target::Master { master: 0 });
         s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
         assert_eq!(s.doc().unwrap().selection.target, Target::Master { master: 0 });
         assert!(!s.doc().unwrap().doc.masters[0].preserve);

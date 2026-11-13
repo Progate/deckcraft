@@ -11,6 +11,45 @@ use crate::ribbon::{cref_param, paint_anim_tile};
 use crate::theme::{self, Tokens};
 use crate::{SlideApp, widgets};
 
+/// Review › Reading Order (Accessibility): the slide's objects in the order a screen reader
+/// reads them, which is their order on the slide (`spTree`). Moving one earlier sends it
+/// backward one step; later brings it forward.
+fn reading_order(app: &mut SlideApp, ui: &mut Ui) {
+    let Some(st) = app.session.active() else { return };
+    let rows: Vec<(deckcraft_model::ShapeId, String, bool)> = st
+        .shapes()
+        .iter()
+        .map(|s| {
+            let text = s.text.as_ref().map(|t| t.text()).unwrap_or_default();
+            let label = if text.trim().is_empty() {
+                s.name.clone()
+            } else {
+                format!("{} — {}", s.name, text.lines().next().unwrap_or("").chars().take(30).collect::<String>())
+            };
+            (s.id, label, st.selection.shapes.contains(&s.id))
+        })
+        .collect();
+    ui.label(egui::RichText::new(tl!("Objects are read in this order, from the top.")).small());
+    ui.add_space(4.0);
+    let n = rows.len();
+    for (k, (id, label, selected)) in rows.into_iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(format!("{}", k + 1));
+            if ui.selectable_label(selected, label).clicked() {
+                let _ = app.run("edit.select", json!({"ids": [id.0]}));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add_enabled(k + 1 < n, egui::Button::new("▼")).on_hover_text(tl!("Move Down")).clicked() {
+                    let _ = app.run("arrange.bringForward", json!({"ids": [id.0]}));
+                }
+                if ui.add_enabled(k > 0, egui::Button::new("▲")).on_hover_text(tl!("Move Up")).clicked() {
+                    let _ = app.run("arrange.sendBackward", json!({"ids": [id.0]}));
+                }
+            });
+        });
+    }
+}
+
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(pane) = app.ui.pane.clone() else { return };
@@ -31,6 +70,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "smartart" => "Text Pane",
                 "thesaurus" => "Thesaurus",
                 "revisions" => "Revisions",
+                "readingOrder" => "Reading Order",
                 _ => "Pane",
             };
             ui.horizontal(|ui| {
@@ -57,6 +97,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "smartart" => smartart(app, ui),
                 "thesaurus" => thesaurus(app, ui),
                 "revisions" => revisions(app, ui),
+                "readingOrder" => reading_order(app, ui),
                 _ => {}
             });
         });
@@ -333,7 +374,9 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
             let mut fields = |ui: &mut Ui, label: &str, id: &str, v: f64, key: &str, cmd: &str, unit: f64| {
                 ui.horizontal(|ui| {
                     ui.add_sized(vec2(90.0, 20.0), egui::Label::new(crate::i18n::t(label)));
-                    if let Some(nv) = widgets::spinner(ui, id, v / unit, 0.1, if unit == 72.0 { "\"" } else { "°" }, 70.0) {
+                    // Lengths show in inches or centimetres (`units`); angles in degrees.
+                    let (unit, suffix) = if unit == 72.0 { (crate::units::pt_per_unit(), crate::units::suffix()) } else { (unit, "°") };
+                    if let Some(nv) = widgets::spinner(ui, id, v / unit, 0.1, suffix, 70.0) {
                         let mut p = json!({key: nv * unit});
                         if cmd == "shape.resize" && locked {
                             p["lockAspect"] = json!(true);
@@ -1539,25 +1582,29 @@ mod tests {
 fn thesaurus(app: &mut SlideApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let mut q = app.thesaurus_query.clone();
-    let edit = ui.add(egui::TextEdit::singleline(&mut q).hint_text("Search for a word").desired_width(f32::INFINITY));
+    let edit = ui.add(egui::TextEdit::singleline(&mut q).hint_text(tl!("Search for a word")).desired_width(f32::INFINITY));
     if edit.changed() {
         app.thesaurus_query = q.clone();
     }
     ui.add_space(6.0);
     let senses = deckcraft_engine::thesaurus::lookup(&q);
     if q.trim().is_empty() {
-        ui.label(egui::RichText::new("Select a word on the slide, or type one above.").color(t.text_dim));
+        ui.label(egui::RichText::new(tl!("Select a word on the slide, or type one above.")).color(t.text_dim));
         return;
     }
     if senses.is_empty() {
-        ui.label(egui::RichText::new(format!("No synonyms for \"{}\".", q.trim())).color(t.text_dim));
+        ui.label(egui::RichText::new(crate::i18n::t(&(format!("No synonyms for \"{}\".", q.trim())))).color(t.text_dim));
         return;
     }
     let editing = app.session.active().is_some_and(|d| d.selection.text.is_some());
     for sense in senses {
-        ui.label(egui::RichText::new(&sense.word).font(theme::bold(13.0)));
+        ui.label(egui::RichText::new(crate::i18n::t(&sense.word)).font(theme::bold(13.0)));
         for syn in sense.synonyms {
-            let r = ui.add(egui::Button::new(&syn).frame(false)).on_hover_text(if editing { "Insert" } else { "Look up" });
+            let r = ui.add(egui::Button::new(crate::i18n::t(&syn)).frame(false)).on_hover_text(crate::i18n::t(if editing {
+                "Insert"
+            } else {
+                "Look up"
+            }));
             if r.clicked() {
                 if editing {
                     run(app, "review.replaceWord", json!({"with": syn}));

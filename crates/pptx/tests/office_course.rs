@@ -290,3 +290,75 @@ fn document_inspector_removals_are_saved() {
     let slide2 = part(&bytes, "ppt/slides/slide2.xml");
     assert!(!slide2.contains("<a:off x=\"-"), "the off-slide shape is gone");
 }
+
+#[test]
+fn series_and_point_colours_are_saved_in_chart_sppr() {
+    let mut s = Session::with_new();
+    s.execute("insert.chart", &json!({"type": "column"})).unwrap();
+    s.execute("chart.format", &json!({"series": 0, "fill": "#FF0000"})).unwrap();
+    s.execute("chart.format", &json!({"series": 1, "point": 2, "fill": "#00B050"})).unwrap();
+    let bytes = save(&s);
+    let xml = chart_xml(&bytes);
+    let ser0 = &xml[xml.find("<c:ser>").unwrap()..];
+    assert!(ser0[..ser0.find("</c:ser>").unwrap()].contains("<a:srgbClr val=\"FF0000\"/>"), "{xml}");
+    assert!(xml.contains("<c:dPt><c:idx val=\"2\"/>") && xml.contains("00B050"), "{xml}");
+    let c = first_chart(&deckcraft_pptx::import(&bytes).unwrap());
+    assert!(c.series[0].fill.is_some());
+    assert_eq!(c.series[1].point_fills.len(), 1);
+    assert_eq!(c.series[1].point_fills[0].0, 2);
+    // Deleting the first series keeps the second one's point colour (from: 1).
+    let cats = c.categories.clone();
+    s.execute("chart.data", &json!({"categories": cats, "series": [{"name": "B", "values": [1, 2, 3, 4], "from": 1}]})).unwrap();
+    let c = first_chart(&deckcraft_pptx::import(&save(&s)).unwrap());
+    assert_eq!(c.series.len(), 1);
+    assert_eq!(c.series[0].point_fills.first().map(|p| p.0), Some(2));
+}
+
+#[test]
+fn the_view_is_saved_as_last_view() {
+    let mut s = Session::with_new();
+    s.execute("view.mode", &json!({"view": "sorter"})).unwrap();
+    assert!(!s.doc().unwrap().is_dirty(), "switching views doesn't edit the presentation");
+    let bytes = save(&s);
+    assert!(part(&bytes, "ppt/viewProps.xml").contains("lastView=\"sldSorterView\""));
+    assert_eq!(deckcraft_pptx::import(&bytes).unwrap().last_view.as_deref(), Some("sldSorterView"));
+    s.execute("view.mode", &json!({"view": "outline"})).unwrap();
+    assert!(part(&save(&s), "ppt/viewProps.xml").contains("lastView=\"outlineView\""));
+    s.execute("view.mode", &json!({"view": "normal"})).unwrap();
+    assert!(!part(&save(&s), "ppt/viewProps.xml").contains("lastView"));
+}
+
+#[test]
+fn master_title_formatting_goes_to_title_style() {
+    let mut s = Session::with_new();
+    s.execute("view.slideMaster", &json!({})).unwrap();
+    let title = s.doc().unwrap().shapes().iter().find(|x| x.ph_type().is_some_and(|k| k.is_title())).unwrap().id;
+    s.execute("edit.select", &json!({"ids": [title.0]})).unwrap();
+    s.execute("format.bold", &json!({})).unwrap();
+    s.execute("format.size", &json!({"size": 50})).unwrap();
+    let xml = part(&save(&s), "ppt/slideMasters/slideMaster1.xml");
+    let ts = &xml[xml.find("<p:titleStyle>").unwrap()..xml.find("</p:titleStyle>").unwrap()];
+    assert!(ts.contains("b=\"1\"") && ts.contains("sz=\"5000\""), "{ts}");
+}
+
+#[test]
+fn summary_zoom_makes_its_slide_and_sections() {
+    let mut s = Session::with_new();
+    for t in ["A", "B", "C"] {
+        s.execute("slide.new", &json!({"title": t})).unwrap();
+    }
+    s.execute("insert.zoom", &json!({"kind": "summary", "slides": [1, 3], "title": "サマリー", "sectionName": "サマリー セクション"})).unwrap();
+    let q = deckcraft_pptx::import(&save(&s)).unwrap();
+    assert!(q.slides.iter().any(|sl| sl.title() == "サマリー"));
+    let names: Vec<&str> = q.sections.iter().map(|x| x.name.as_str()).collect();
+    assert_eq!(names, ["サマリー セクション", "A", "C"]);
+}
+
+#[test]
+fn ink_strokes_from_the_cli_are_saved() {
+    let mut s = Session::with_new();
+    s.execute("draw.stroke", &json!({"points": [[100, 100], [200, 150], [300, 120]], "color": "#FF0000"})).unwrap();
+    let xml = part(&save(&s), "ppt/slides/slide1.xml");
+    assert!(xml.contains("name=\"Ink 1\"") || xml.contains("<a:custGeom>"), "{xml}");
+    assert!(xml.contains("FF0000"));
+}

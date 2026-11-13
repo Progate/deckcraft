@@ -1383,12 +1383,18 @@ pub(crate) fn format_para(s: &mut Session, f: &(dyn Fn(&mut deckcraft_model::tex
     if ids.is_empty() {
         return Err(bad("format", SELECT_TEXT_OR_SHAPE));
     }
+    // Selected cells of a table (dragged across): only those cells, not the whole table.
+    let cells = st.selection.cells;
     edit_shapes(s, &json!({"ids": ids}), "format", |sh| {
+        let id = sh.id;
         match &mut sh.kind {
             ShapeKind::Table(t) => {
-                for row in &mut t.rows {
-                    for c in &mut row.cells {
-                        c.text.paragraphs.iter_mut().for_each(f);
+                let range = cells.filter(|(tid, _, _)| *tid == id).map(|(_, a, b)| ((a.0.min(b.0), a.1.min(b.1)), (a.0.max(b.0), a.1.max(b.1))));
+                for (ri, row) in t.rows.iter_mut().enumerate() {
+                    for (ci, c) in row.cells.iter_mut().enumerate() {
+                        if range.is_none_or(|((r0, c0), (r1, c1))| (r0..=r1).contains(&ri) && (c0..=c1).contains(&ci)) {
+                            c.text.paragraphs.iter_mut().for_each(f);
+                        }
                     }
                 }
             }

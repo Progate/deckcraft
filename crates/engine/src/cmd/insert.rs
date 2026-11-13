@@ -109,7 +109,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Edit Data",
             ["Chart Design", "Data"],
             None,
-            "{categories?: [..], levels?: [[..]] (outer category levels, innermost first), series?: [{name, values}], id?}",
+            "{categories?: [..], levels?: [[..]] (outer category levels, innermost first), series?: [{name, values, from?: old index (keeps its formatting)}], categoryFrom?: [old category index] (keeps point colours), id?}",
             has_selection,
             chart_data
         ),
@@ -121,6 +121,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{title?: string|null, legend?: b|t|l|r|null, dataLabels?: bool, gridlines?: bool, minorGridlines?: bool, xAxisTitle?: string|null, yAxisTitle?: string|null, palette?, binCount?: n|null, binSize?: n|null, subtotals?: [point index], quartiles?: exclusive|inclusive, upDownBars?: bool, id?}",
             has_selection,
             chart_options
+        ),
+        cmd!(
+            "chart.format",
+            "Format Data Series",
+            ["Chart Format", "Current Selection"],
+            None,
+            "{series: index, point?: index (one data point), fill: color|null (automatic), id?}",
+            has_selection,
+            chart_format
         ),
         cmd!("chart.quickLayout", "Quick Layout", ["Chart Design", "Chart Layouts"], None, "{layout: 1-6, id?}", has_selection, chart_quick_layout),
         cmd!(
@@ -1331,7 +1340,7 @@ fn video(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn word_art(s: &mut Session, p: &Value) -> Result<Value> {
-    let text = str_param(p, "text").unwrap_or("Your text here");
+    let text = str_param(p, "text").unwrap_or(crate::localized("Your text here", "ここに文字を入力"));
     let size = s.doc()?.doc.slide_size;
     let style = usize_param(p, "style").unwrap_or(0);
     let mut shape = new_text_box(Xfrm::new(size.width * 0.2, size.height * 0.4, size.width * 0.6, 80.0), text);
@@ -1719,15 +1728,21 @@ fn chart_data(s: &mut Session, p: &Value) -> Result<Value> {
         .get("categories")
         .and_then(Value::as_array)
         .map(|a| a.iter().map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).collect());
-    let series: Option<Vec<deckcraft_model::chart::Series>> = p.get("series").and_then(Value::as_array).map(|a| {
+    let series: Option<Vec<(deckcraft_model::chart::Series, Option<usize>)>> = p.get("series").and_then(Value::as_array).map(|a| {
         a.iter()
-            .map(|sv| deckcraft_model::chart::Series {
-                name: sv.get("name").and_then(Value::as_str).unwrap_or("Series").to_string(),
-                values: sv.get("values").and_then(Value::as_array).map(|v| v.iter().map(Value::as_f64).collect()).unwrap_or_default(),
-                ..Default::default()
+            .map(|sv| {
+                let s = deckcraft_model::chart::Series {
+                    name: sv.get("name").and_then(Value::as_str).unwrap_or("Series").to_string(),
+                    values: sv.get("values").and_then(Value::as_array).map(|v| v.iter().map(Value::as_f64).collect()).unwrap_or_default(),
+                    ..Default::default()
+                };
+                (s, sv.get("from").and_then(Value::as_u64).map(|i| i as usize))
             })
-            .collect()
+            .collect::<Vec<_>>()
     });
+    // Where each new category came from: point colours move with their category.
+    let cat_from: Option<Vec<Option<usize>>> =
+        p.get("categoryFrom").and_then(Value::as_array).map(|a| a.iter().map(|v| v.as_u64().map(|i| i as usize)).collect());
     let levels: Option<Vec<Vec<String>>> = p.get("levels").and_then(Value::as_array).map(|a| {
         a.iter()
             .take(deckcraft_model::chart::MAX_LEVELS)
@@ -1744,18 +1759,28 @@ fn chart_data(s: &mut Session, p: &Value) -> Result<Value> {
             c.category_levels = l.clone();
         }
         if let Some(se) = &series {
-            // Keep series formatting by position.
+            // Keep series formatting: from the series named by `from`, else by position.
             let old = std::mem::take(&mut c.series);
             c.series = se
                 .iter()
                 .enumerate()
-                .map(|(i, n)| {
-                    let mut x = old.get(i).cloned().unwrap_or_default();
+                .map(|(i, (n, from))| {
+                    let mut x = old.get(from.unwrap_or(i)).cloned().unwrap_or_default();
                     x.name = n.name.clone();
                     x.values = n.values.clone();
                     x
                 })
                 .collect();
+        }
+        if let Some(map) = &cat_from {
+            for s in &mut c.series {
+                let fills = std::mem::take(&mut s.point_fills);
+                s.point_fills = map
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(new, old)| old.and_then(|o| fills.iter().find(|(i, _)| *i == o)).map(|(_, f)| (new, f.clone())))
+                    .collect();
+            }
         }
         c.raw = None;
         Ok(())
@@ -1844,6 +1869,39 @@ pub const QUICK_LAYOUTS: [(bool, Option<&str>, bool, bool, bool); 6] = [
     (true, None, false, true, true),
     (true, None, false, true, true),
 ];
+
+/// Format Data Series › Fill: one series' colour, or one data point's (`c:ser`/`c:dPt` `c:spPr`).
+fn chart_format(s: &mut Session, p: &Value) -> Result<Value> {
+    let series = p.get("series").and_then(Value::as_u64).ok_or_else(|| bad("chart.format", "missing `series`"))? as usize;
+    let point = p.get("point").and_then(Value::as_u64).map(|i| i as usize);
+    let fill = match p.get("fill") {
+        None => return Err(bad("chart.format", "missing `fill`")),
+        Some(Value::Null) => None,
+        Some(_) => {
+            Some(deckcraft_model::style::Fill::Solid { color: color_param(p, "fill").ok_or_else(|| bad("chart.format", "`fill` is not a colour"))? })
+        }
+    };
+    with_chart(s, p, "chart.format", |c| {
+        let n = c.categories.len().max(c.series.iter().map(|s| s.values.len()).max().unwrap_or(0));
+        let Some(ser) = c.series.get_mut(series) else { return Err(bad("chart.format", "no such series")) };
+        match point {
+            Some(i) if i >= n => return Err(bad("chart.format", "no such data point")),
+            Some(i) => {
+                ser.point_fills.retain(|(k, _)| *k != i);
+                if let Some(f) = fill.clone() {
+                    ser.point_fills.push((i, f));
+                    ser.point_fills.sort_by_key(|(k, _)| *k);
+                }
+            }
+            None => {
+                ser.fill = fill.clone();
+                ser.point_fills.clear();
+            }
+        }
+        c.raw = None;
+        Ok(())
+    })
+}
 
 fn chart_quick_layout(s: &mut Session, p: &Value) -> Result<Value> {
     let n = p.get("layout").and_then(Value::as_u64).unwrap_or(0);

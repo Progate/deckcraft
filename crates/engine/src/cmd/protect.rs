@@ -286,10 +286,13 @@ fn set_modify_password(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let v = (!password.is_empty()).then(|| verifier_for(password));
     let on = v.is_some();
-    s.edit(|doc, _| {
-        doc.modify_verifier = v;
-        Ok(())
-    })?;
+    // Allowed on a presentation marked final too (PowerPoint lets you protect it in either
+    // order): this is protection, not an edit of the content, so it skips `Session::edit`'s lock.
+    let st = s.doc_mut()?;
+    let mut doc = (*st.doc).clone();
+    doc.modify_verifier = v;
+    st.doc = Arc::new(doc);
+    st.revision += 1;
     Ok(json!({"modifyPassword": on}))
 }
 
@@ -372,6 +375,15 @@ mod tests {
         s.execute("file.editAnyway", &json!({})).unwrap();
         assert!(!s.doc().unwrap().doc.props.mark_as_final);
         s.execute("slide.new", &json!({})).unwrap();
+    }
+
+    #[test]
+    fn a_final_presentation_can_still_get_a_password_to_modify() {
+        let mut s = Session::with_new();
+        s.execute("file.markFinal", &json!({})).unwrap();
+        s.execute("file.setModifyPassword", &json!({"password": "pw"})).unwrap();
+        assert!(s.doc().unwrap().doc.modify_verifier.is_some());
+        assert!(s.doc().unwrap().doc.props.mark_as_final);
     }
 
     #[test]

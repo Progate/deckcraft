@@ -22,7 +22,7 @@ pub fn specs() -> Vec<CommandSpec> {
         "Zoom",
         ["Insert", "Links"],
         None,
-        "{kind?: slide|section|summary (default slide); slides?: [index] (slide and summary zooms); sections?: [index] (section zoom); returnToZoom?: bool (default: on for section and summary, off for slide)}",
+        "{kind?: slide|section|summary (default slide); slides?: [index] (slide and summary zooms); sections?: [index] (section zoom); returnToZoom?: bool (default: on for section and summary, off for slide); title?: the summary slide's title (Summary); sectionName?: the summary's own section (Summary Section)}",
         has_slide,
         zoom
     )]
@@ -125,6 +125,16 @@ fn zoom(s: &mut Session, p: &Value) -> Result<Value> {
         })
         .collect();
     let summary = kind == "summary";
+    let summary_title = str_param(p, "title").filter(|t| !t.trim().is_empty()).unwrap_or("Summary").to_string();
+    let summary_section = str_param(p, "sectionName").filter(|t| !t.trim().is_empty()).unwrap_or("Summary Section").to_string();
+    let section_names: Vec<(usize, String)> = targets
+        .iter()
+        .map(|t| {
+            let title = doc.slides.get(t.index).map(|sl| sl.title()).unwrap_or_default();
+            let name = title.lines().next().unwrap_or("").trim().to_string();
+            (t.index, if name.is_empty() { format!("Slide {}", t.index + 1) } else { name })
+        })
+        .collect();
     let first_target = targets.iter().map(|t| t.index).min().unwrap_or(0);
     s.edit(|doc, sel| {
         let aspect = size.width / size.height.max(1.0);
@@ -174,11 +184,28 @@ fn zoom(s: &mut Session, p: &Value) -> Result<Value> {
                 defaults::layout_of_kind(doc, LayoutType::TitleOnly).or_else(|| doc.slides.get(first_target).map(|x| x.layout)).unwrap_or_default();
             let mut slide = defaults::new_slide(doc, layout).ok_or_else(|| bad("insert.zoom", NO_ID_SPACE))?;
             if let Some(sh) = slide.shapes.iter_mut().find(|x| x.ph_type().is_some_and(|k| k.is_title())) {
-                sh.text = Some(TextBody::from_text("Summary"));
+                sh.text = Some(TextBody::from_text(&summary_title));
             }
             slide.shapes.extend(shapes);
             let at = first_target.min(doc.slides.len());
             doc.slides.insert(at, Arc::new(slide));
+            // As in PowerPoint, a presentation without sections gets one per zoomed part (named
+            // after its first slide) and one for the summary and what comes before it.
+            if doc.sections.is_empty() {
+                let mut starts: Vec<(usize, String)> = section_names.iter().map(|(i, n)| (i + 1, n.clone())).collect();
+                starts.sort_by_key(|(i, _)| *i);
+                starts.dedup_by_key(|(i, _)| *i);
+                let mut sections = vec![deckcraft_model::Section { name: summary_section.clone(), slides: vec![] }];
+                for (i, sl) in doc.slides.iter().enumerate() {
+                    if let Some((_, n)) = starts.iter().find(|(s, _)| *s == i) {
+                        sections.push(deckcraft_model::Section { name: n.clone(), slides: vec![] });
+                    }
+                    if let Some(sec) = sections.last_mut() {
+                        sec.slides.push(sl.id);
+                    }
+                }
+                doc.sections = sections;
+            }
             sel.slide = at;
             sel.slides.clear();
         } else {

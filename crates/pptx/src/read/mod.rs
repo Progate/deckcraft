@@ -586,7 +586,12 @@ pub fn import_checked(bytes: &[u8]) -> Result<(Presentation, Vec<String>), PptxE
             p.custom_shows.push(CustomShow { name: cs.attr("name").unwrap_or("").to_string(), slides });
         }
     }
-    // Drawing guides (eighths of a point).
+    // The view it was saved in (`lastView`), and drawing guides (eighths of a point).
+    if let Some(r) = pres_part.rels.first_of("viewProps")
+        && let Some(d) = pkg.xml(&r.target)
+    {
+        p.last_view = d.root.attr("lastView").filter(|v| *v != "sldView" && v.len() < 40).map(String::from);
+    }
     if let Some(r) = pres_part.rels.first_of("viewProps")
         && let Some(d) = pkg.xml(&r.target)
         && let Some(lst) = d.root.find("slideViewPr").and_then(|v| v.find("guideLst"))

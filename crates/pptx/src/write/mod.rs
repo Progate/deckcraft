@@ -1181,7 +1181,14 @@ fn pres_props_xml(p: &Presentation) -> Vec<u8> {
 
 fn view_props_xml(p: &Presentation) -> Vec<u8> {
     let mut w = W::new();
-    root_open(&mut w, "p:viewPr", A::new());
+    // The view PowerPoint opens the file in (Normal when absent). Only the standard values go out.
+    let last = p.last_view.as_deref().filter(|v| {
+        matches!(
+            *v,
+            "sldMasterView" | "notesMasterView" | "handoutView" | "notesView" | "outlineView" | "sldSorterView" | "sldThumbnailView" | "sldView"
+        )
+    });
+    root_open(&mut w, "p:viewPr", A::new().o("lastView", last));
     w.open0("p:normalViewPr");
     w.empty("p:restoredLeft", A::new().a("sz", 15620));
     w.empty("p:restoredTop", A::new().a("sz", 94660));

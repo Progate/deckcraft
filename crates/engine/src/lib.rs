@@ -20,6 +20,7 @@ pub mod inkshape;
 pub mod io;
 pub mod keys;
 pub mod links;
+pub mod master_styles;
 pub mod media_refs;
 pub mod recovery;
 pub mod sample;
@@ -36,6 +37,25 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
+
+static EDITING_LANG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The language new automatic dates are written in (BCP 47, `ja-JP`), set once by the interface;
+/// `None` keeps the default, US English.
+pub fn editing_lang() -> Option<&'static str> {
+    EDITING_LANG.get().map(String::as_str)
+}
+
+/// Text the engine puts into a presentation (a new section's name, WordArt's sample text) in the
+/// editing language: `ja` in Japanese, else `en`.
+pub fn localized(en: &'static str, ja: &'static str) -> &'static str {
+    if editing_lang().is_some_and(|l| l.starts_with("ja")) { ja } else { en }
+}
+
+/// Set [`editing_lang`] (the first call wins: the interface language is fixed per process).
+pub fn set_editing_lang(lang: &str) {
+    let _ = EDITING_LANG.set(lang.to_string());
+}
 pub use deckcraft_geom as geom;
 pub use deckcraft_media as media;
 pub use deckcraft_model as model;
@@ -651,6 +671,19 @@ impl Session {
         };
         if let Some(st) = self.active_mut() {
             clamp_selection(st);
+        }
+        // In Slide Master view, placeholder formatting becomes the master's or layout's text
+        // styles, so the slides follow it (see `master_styles`).
+        if outer
+            && spec.undoable
+            && let Some(st) = self.active_mut()
+            && matches!(st.selection.target, Target::Master { .. } | Target::Layout { .. })
+            && before.as_ref().is_some_and(|(uid, old, _)| *uid == st.uid && !Arc::ptr_eq(old, &st.doc))
+        {
+            let mut doc = (*st.doc).clone();
+            if master_styles::promote_placeholder_formatting(&mut doc, st.selection.target) {
+                st.doc = Arc::new(doc);
+            }
         }
         if let (Some((uid, old, sel)), Some(st)) = (before, self.active_mut())
             && st.uid == uid
