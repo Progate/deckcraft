@@ -1297,7 +1297,9 @@ pub(crate) fn format_run(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + Sy
     if ids.is_empty() {
         return Err(bad("format", SELECT_TEXT_OR_SHAPE));
     }
+    let in_master = matches!(st.selection.target, Target::Master { .. } | Target::Layout { .. });
     edit_shapes(s, &json!({"ids": ids}), "format", |sh| {
+        let placeholder = sh.ph.is_some();
         match &mut sh.kind {
             ShapeKind::Table(t) => {
                 for row in &mut t.rows {
@@ -1308,6 +1310,12 @@ pub(crate) fn format_run(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + Sy
             }
             _ => {
                 let body = sh.text.get_or_insert_with(TextBody::default);
+                // A master or layout placeholder without sample text (a new master's date and
+                // footer) has no paragraph to hold the formatting, so it would be lost before
+                // `master_styles` moves it into the placeholder's list style; give it an empty one.
+                if in_master && placeholder && body.paragraphs.is_empty() {
+                    body.paragraphs.push(Paragraph::default());
+                }
                 ed::format_all(body, f);
             }
         }

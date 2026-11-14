@@ -152,6 +152,29 @@ pub fn default_text_style() -> ListStyle {
     s
 }
 
+/// The list style a new master and its layouts give a date, footer or slide number placeholder:
+/// 12 pt in `tx1` at 75% tint, aligned left, centred or right by kind.
+pub fn footer_list_style(kind: PhType) -> ListStyle {
+    let align = match kind {
+        PhType::Footer => crate::text::Align::Center,
+        PhType::SlideNum => crate::text::Align::Right,
+        _ => crate::text::Align::Left,
+    };
+    let mut ls = ListStyle::default();
+    ls.set(
+        0,
+        LevelStyle {
+            para: ParaProps { align: Some(align), ..Default::default() },
+            run: RunProps {
+                size: Some(12.0),
+                fill: Some(Fill::solid(ColorRef::scheme(SchemeSlot::Tx1).with(deckcraft_color::ColorTransform::Tint(75000)))),
+                ..Default::default()
+            },
+        },
+    );
+    ls
+}
+
 /// The master and its eleven standard layouts for a slide size, with ids starting at `first_id`.
 /// Returns the master and the next free id.
 pub fn build_master(size: Size, theme: Theme, first_id: u32) -> (Master, u32) {
@@ -167,25 +190,11 @@ pub fn build_master(size: Size, theme: Theme, first_id: u32) -> (Master, u32) {
         let mut d = b.shape("Date Placeholder", PhType::Date, 10, x1, y1, w1, h1);
         let mut f = b.shape("Footer Placeholder", PhType::Footer, 11, x2, y1, w2, h1);
         let mut n = b.shape("Slide Number Placeholder", PhType::SlideNum, 12, x3, y1, w3, h1);
-        let small = |align| {
-            let mut ls = ListStyle::default();
-            ls.set(
-                0,
-                LevelStyle {
-                    para: ParaProps { align: Some(align), ..Default::default() },
-                    run: RunProps {
-                        size: Some(12.0),
-                        fill: Some(Fill::solid(ColorRef::scheme(SchemeSlot::Tx1).with(deckcraft_color::ColorTransform::Tint(75000)))),
-                        ..Default::default()
-                    },
-                },
-            );
-            ls
-        };
-        for (s, a) in [(&mut d, crate::text::Align::Left), (&mut f, crate::text::Align::Center), (&mut n, crate::text::Align::Right)] {
+        for s in [&mut d, &mut f, &mut n] {
+            let kind = s.ph_type();
             if let Some(t) = s.text.as_mut() {
                 t.body.anchor = Some(Anchor::Middle);
-                t.list_style = small(a);
+                t.list_style = kind.map(footer_list_style).unwrap_or_default();
             }
         }
         if let Some(t) = n.text.as_mut() {
