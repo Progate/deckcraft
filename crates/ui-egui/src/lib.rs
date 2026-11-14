@@ -6,6 +6,14 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+/// A string in the interface language ([`i18n::t`]): `tl!("Home")`.
+#[macro_export]
+macro_rules! tl {
+    ($s:expr) => {
+        $crate::i18n::t($s)
+    };
+}
+
 pub mod animtimeline;
 pub mod backstage;
 pub mod canvas;
@@ -15,6 +23,7 @@ pub mod dialogs;
 pub mod doc_window;
 pub mod eyedropper;
 pub mod fillui;
+pub mod i18n;
 pub mod icons;
 pub mod media;
 pub mod menus;
@@ -35,6 +44,7 @@ pub mod theme;
 pub mod thumbs;
 pub mod toast;
 pub mod uifonts;
+pub mod units;
 pub mod widgets;
 
 use std::collections::HashMap;
@@ -492,6 +502,12 @@ pub struct SlideApp {
     pub(crate) notes_buf: (u64, usize, notes::Draft),
     /// Faces borrowed from the font database for text the interface fonts can't draw (#101).
     pub ui_fonts: uifonts::UiFonts,
+    /// The interface language's catalog was handed to [`Self::ui_fonts`] (once per process).
+    lang_fonts_noted: bool,
+    /// Home › New Slide › Reuse Slides: the presentation chosen in the Reuse Slides pane (its
+    /// path and slides) and whether to keep its formatting.
+    pub reuse: Option<(String, std::sync::Arc<deckcraft_model::Presentation>)>,
+    pub reuse_keep: bool,
     /// Thumbnail pane drag (slide index, current drop index).
     pub(crate) thumb_drag: Option<(usize, usize)>,
     /// Selection pane: folded groups, renaming, drag and drop.
@@ -530,8 +546,29 @@ fn grid_flag(p: &Value, key: &str) -> Result<Option<bool>, String> {
 }
 
 impl SlideApp {
-    pub fn new(session: Session, mut services: Services) -> Self {
+    pub fn new(mut session: Session, mut services: Services) -> Self {
         let audio_out = services.audio_out.take();
+        // Japanese interface: new presentations get Japanese layout names and sample text, dates
+        // in ja-JP. The host may have made the first, still untouched presentation already.
+        if i18n::system_lang().code() == "ja" {
+            deckcraft_engine::set_editing_lang("ja-JP");
+            let active = session.active_index();
+            for i in 0..session.documents().len() {
+                session.set_active(i);
+                if let Some(st) = session.active_mut()
+                    && st.path.is_none()
+                    && !st.is_dirty()
+                {
+                    let mut doc = (*st.doc).clone();
+                    deckcraft_engine::cmd::file::localize_new(&mut doc);
+                    st.doc = std::sync::Arc::new(doc);
+                    st.saved_doc = st.doc.clone();
+                }
+            }
+            if let Some(i) = active {
+                session.set_active(i);
+            }
+        }
         SlideApp {
             table_pen: serde_json::json!({"width": 1.0}),
             session,
@@ -572,6 +609,9 @@ impl SlideApp {
             quit_confirmed: false,
             notes_buf: (0, usize::MAX, notes::Draft::default()),
             ui_fonts: uifonts::UiFonts::default(),
+            lang_fonts_noted: false,
+            reuse: None,
+            reuse_keep: false,
             thumb_drag: None,
             selpane: selpane::State::default(),
             align_to: None,
@@ -743,6 +783,8 @@ impl SlideApp {
             "pngAll" => ("png", "png", true),
             "jpeg" | "jpg" => ("jpg", "jpeg", false),
             "pptx" => ("pptx", "pptx", false),
+            "potx" => ("potx", "potx", false),
+            "ppsx" => ("ppsx", "ppsx", false),
             "outline" | "txt" => ("txt", "outline", false),
             "deckcraft" => ("deckcraft", "deckcraft", false),
             "gif" => ("gif", "gif", false),
@@ -807,6 +849,29 @@ impl SlideApp {
     /// File › Print: DeckCraft prints through a PDF. On the desktop the PDF (with the Print page's
     /// layout, slides and options) is written to the temporary folder and opened in the system's
     /// PDF viewer, which has the printers; on the web it downloads.
+    /// Print to the "Save as PDF" printer: the printout goes to a PDF file the user names (the save
+    /// window), so it stays in the workspace (PowerPoint's Microsoft Print to PDF).
+    pub fn print_to_pdf_file(&mut self, params: Value) -> bool {
+        let Some(title) = self.session.active().map(|d| d.title()) else { return false };
+        let Some(pick) = self.services.pick_save.as_mut() else { return self.print_pdf(params) };
+        let Some(path) = pick(&format!("{title}.pdf")) else { return false };
+        let mut params = if params.is_object() { params } else { json!({}) };
+        if let Some(o) = params.as_object_mut() {
+            o.insert("path".into(), json!(path));
+            o.insert("format".into(), json!("pdf"));
+        }
+        match self.run("file.export", params) {
+            Ok(_) => {
+                self.set_status(format!("Saved {path}"));
+                true
+            }
+            Err(e) => {
+                self.set_status(e);
+                false
+            }
+        }
+    }
+
     pub fn print_pdf(&mut self, params: Value) -> bool {
         let Some((title, doc)) = self.session.active().map(|d| (d.title(), d.doc.clone())) else { return false };
         let mut params = if params.is_object() { params } else { json!({}) };
@@ -837,10 +902,19 @@ impl SlideApp {
 
     fn run_ui(&mut self, id: &str, p: &Value) -> Result<Value, String> {
         match id {
-            "view.normal" => self.ui.view = ViewMode::Normal,
-            "view.outline" => self.ui.view = ViewMode::Outline,
-            "view.sorter" => self.ui.view = ViewMode::Sorter,
-            "view.notesPage" => self.ui.view = ViewMode::NotesPage,
+            // The view is also kept in the presentation, saved as viewProps' `lastView`.
+            "view.normal" | "view.outline" | "view.sorter" | "view.notesPage" => {
+                let (mode, name) = match id {
+                    "view.outline" => (ViewMode::Outline, "outline"),
+                    "view.sorter" => (ViewMode::Sorter, "sorter"),
+                    "view.notesPage" => (ViewMode::NotesPage, "notes"),
+                    _ => (ViewMode::Normal, "normal"),
+                };
+                self.ui.view = mode;
+                if self.session.active().is_some() {
+                    let _ = self.session.execute("view.mode", &json!({"view": name}));
+                }
+            }
             "view.reading" => self.start_show(self.session.active().map(|d| d.selection.slide).unwrap_or(0), true),
             "view.notes" => self.ui.notes = self.flag(p, self.ui.notes),
             "view.ruler" => self.ui.ruler = self.flag(p, self.ui.ruler),
@@ -1227,16 +1301,25 @@ impl SlideApp {
 
     /// Home › New Slide › Reuse Slides…: pick a presentation and insert all its slides after the
     /// current one (desktop only: the browser picker opens what it picks as a document).
+    /// Reuse Slides: choose a presentation, then insert its slides one by one from the Reuse
+    /// Slides pane, as in PowerPoint (`slide.reuse` with one slide index each time).
     fn pick_and_reuse(&mut self, keep: bool) {
         let Some(pick) = self.services.pick_open.as_mut() else {
             self.set_status("Reuse Slides needs the desktop app".to_string());
             return;
         };
         let Some(path) = pick("open") else { return };
-        match self.session.execute("slide.reuse", &json!({"path": path, "keepFormatting": keep})) {
-            Ok(r) => self.set_status(format!("Inserted {} slides from {path}", r["slides"])),
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        match deckcraft_engine::cmd::file::read_presentation_file(&path) {
+            Ok(f) => {
+                self.reuse = Some((path, std::sync::Arc::new(f.doc)));
+                self.reuse_keep = keep;
+                self.ui.pane = Some("reuse".into());
+            }
             Err(e) => self.set_status(e.to_string()),
         }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let _ = (path, keep);
     }
 
     fn pick_and_insert(&mut self, purpose: &str, cmd: &str) {
@@ -1280,7 +1363,7 @@ impl SlideApp {
 
     pub fn save_as_dialog(&mut self, format: &str) {
         let name = self.session.active().map(|d| d.title()).unwrap_or_else(|| "Presentation".into());
-        let ext = if format == "pptx" { "pptx" } else { "deckcraft" };
+        let ext = if matches!(format, "pptx" | "potx" | "ppsx") { format } else { "deckcraft" };
         let suggested = format!("{name}.{ext}");
         if let Some(pick) = self.services.pick_save.as_mut() {
             if let Some(path) = pick(&suggested) {
@@ -1538,6 +1621,21 @@ impl SlideApp {
 
     /// Per-frame logic before layout: styles, control requests, screenshots, shortcuts.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        // The interface language follows the environment (DECKCRAFT_LANGUAGE, LC_ALL, LC_MESSAGES,
+        // LANG). Empty placeholders on the slides show their prompt in it too, and the catalog's
+        // characters get interface faces before the first frame that draws them.
+        let lang = i18n::system_lang();
+        i18n::set_current(lang);
+        if !self.lang_fonts_noted {
+            self.lang_fonts_noted = true;
+            if lang != i18n::Lang::EN {
+                deckcraft_render::set_prompt_text(i18n::prompt);
+                if lang.code() == "ja" {
+                    deckcraft_engine::set_editing_lang("ja-JP");
+                }
+                self.ui_fonts.note(ctx, lang.catalog_text());
+            }
+        }
         let scale = self.ui.ui_scale.clamp(0.5, 3.0);
         if (ctx.zoom_factor() - scale).abs() > 1e-3 {
             ctx.set_zoom_factor(scale);
@@ -1828,7 +1926,12 @@ impl SlideApp {
         ribbon::title_bar(self, ui);
         if self.backstage.is_none() && self.session.active().is_some() {
             ribbon::show(self, ui);
+            ribbon::lock_bar(self, ui);
             status::status_bar(self, ui);
+        }
+        // A presentation opened with a password to modify asks for it (or Read Only) first.
+        if self.dialog.is_none() && self.session.active().is_some_and(|d| d.lock == Some(deckcraft_engine::DocLock::Password)) {
+            self.dialog = Some(dialogs::Dialog::new("unlockPassword"));
         }
         let now = ui.input(|i| i.time);
         if self.tick_anim_preview(now) {

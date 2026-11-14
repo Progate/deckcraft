@@ -157,6 +157,14 @@ fn value_x_scale(c: &Chart, max_intervals: usize) -> Option<(f64, f64, f64)> {
     Some(axis_scale(lo.min(0.0), hi, None, None, None, max_intervals, false))
 }
 
+/// The rough width of `s` in ems: about 0.55 for Latin letters, a full em for CJK and other
+/// wide characters (so a Japanese legend entry doesn't run into the next one).
+pub(crate) fn text_em(s: &str) -> f64 {
+    s.chars()
+        .map(|c| if matches!(c as u32, 0x1100..=0x115F | 0x2E80..=0xA4CF | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6) { 1.0 } else { 0.55 })
+        .sum()
+}
+
 /// Where the legend goes for `c:legendPos`, and the plot area left over.
 /// `size` is the legend block (width, height); the result is its top-left corner and the plot area.
 /// `r` (also the OOXML default and the fallback for unknown values) and `l` are vertical stacks centred
@@ -258,7 +266,7 @@ fn draw_inner(ctx: &mut RenderContext, rctx: &Ctx, c: &Chart, m: Affine, w: f64,
     };
     if let (Some(pos), false) = (&c.legend, legend_items.is_empty()) {
         let vertical = matches!(pos.as_str(), "l" | "r" | "tr");
-        let item_ws: Vec<f64> = legend_items.iter().map(|(n, _)| n.chars().count() as f64 * base * 0.55 + base * 1.6).collect();
+        let item_ws: Vec<f64> = legend_items.iter().map(|(n, _)| text_em(n) * base + base * 1.6).collect();
         let size = if vertical {
             (item_ws.iter().copied().fold(0.0, f64::max).min(w * 0.4), legend_items.len() as f64 * base * 1.5)
         } else {
@@ -271,7 +279,7 @@ fn draw_inner(ctx: &mut RenderContext, rctx: &Ctx, c: &Chart, m: Affine, w: f64,
             ctx.set_transform(m);
             ctx.set_paint(color(*col, 1.0));
             ctx.fill_rect(&Rect::new(x, y + base * 0.3, x + base * 0.7, y + base));
-            let tw = name.chars().count() as f64 * base * 0.55 + base;
+            let tw = text_em(name) * base + base;
             label(ctx, rctx, m, name, Rect::new(x + base, y, x + base + tw, y + base * 1.3), base, Align::Left, Anchor::Middle, text_col, false);
             if vertical {
                 y += base * 1.5;

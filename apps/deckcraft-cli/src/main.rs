@@ -25,6 +25,10 @@ macro_rules! outln {
 }
 
 fn main() -> ExitCode {
+    // DECKCRAFT_LANGUAGE=ja writes new automatic dates as the Japanese interface does (2026/11/13).
+    if std::env::var("DECKCRAFT_LANGUAGE").is_ok_and(|l| l.to_ascii_lowercase().starts_with("ja")) {
+        deckcraft_engine::set_editing_lang("ja-JP");
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let rest = args.get(1..).unwrap_or(&[]);
     let asks_help = rest.iter().any(|a| a == "--help" || a == "-h");

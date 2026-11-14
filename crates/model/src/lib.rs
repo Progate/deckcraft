@@ -894,6 +894,24 @@ pub struct Properties {
     pub modified: String,
     pub last_modified_by: String,
     pub revision: u32,
+    /// File › Info › Protect Presentation › Mark as Final: the custom property `_MarkAsFinal`
+    /// (`docProps/custom.xml`). PowerPoint opens such a file read-only until Edit Anyway.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub mark_as_final: bool,
+}
+
+/// The password to modify (`p:modifyVerifier`): a salted, iterated hash of the password, never the
+/// password itself. Without it the presentation opens read-only.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ModifyVerifier {
+    /// Hash algorithm (`SHA-512`, `SHA-256`, `SHA-1`…).
+    pub algorithm: String,
+    /// Base64 hash and salt, as in the file.
+    pub hash: String,
+    pub salt: String,
+    /// Hash iterations.
+    pub spin_count: u32,
 }
 
 /// One typeface embedded in the presentation (`p:embeddedFont`). Each slot is a font file in
@@ -1005,6 +1023,13 @@ pub struct Presentation {
     /// Unmodelled presentation-level XML kept for round-trip.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_ext: Option<String>,
+    /// Password to modify (File › Save As › Tools › General Options).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modify_verifier: Option<ModifyVerifier>,
+    /// The view the presentation was last saved in (`p:viewPr lastView`: `sldView`,
+    /// `outlineView`, `sldSorterView`, `notesView`…); `None` is Normal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_view: Option<String>,
 }
 
 /// A drawing guide: a vertical line at `pos` points from the slide's left edge, or a horizontal

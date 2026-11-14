@@ -1562,7 +1562,7 @@ impl Session {
         (p.x, p.y, pressure)
     }
 
-    fn add_ink(&mut self, points: Vec<(f64, f64, f32)>) -> Result<Value> {
+    pub(crate) fn add_ink(&mut self, points: Vec<(f64, f64, f32)>) -> Result<Value> {
         let ToolKind::Ink { mode, color, width } = self.tool.kind.clone() else { return Ok(Value::Null) };
         let stroke = deckcraft_model::InkStroke { points, color, width, highlighter: mode == "highlighter" };
         // Strokes join the slide's ink layer (one ink shape per slide).

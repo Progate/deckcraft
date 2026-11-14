@@ -586,7 +586,12 @@ pub fn import_checked(bytes: &[u8]) -> Result<(Presentation, Vec<String>), PptxE
             p.custom_shows.push(CustomShow { name: cs.attr("name").unwrap_or("").to_string(), slides });
         }
     }
-    // Drawing guides (eighths of a point).
+    // The view it was saved in (`lastView`), and drawing guides (eighths of a point).
+    if let Some(r) = pres_part.rels.first_of("viewProps")
+        && let Some(d) = pkg.xml(&r.target)
+    {
+        p.last_view = d.root.attr("lastView").filter(|v| *v != "sldView" && v.len() < 40).map(String::from);
+    }
     if let Some(r) = pres_part.rels.first_of("viewProps")
         && let Some(d) = pkg.xml(&r.target)
         && let Some(lst) = d.root.find("slideViewPr").and_then(|v| v.find("guideLst"))
@@ -677,6 +682,8 @@ pub fn import_checked(bytes: &[u8]) -> Result<(Presentation, Vec<String>), PptxE
     }
 
     p.kept_parts = kept_parts(&pkg, &pres_path);
+    p.props.mark_as_final = crate::protect::take_mark_as_final(&mut p.kept_parts);
+    p.modify_verifier = pres_el.child("modifyVerifier").and_then(crate::protect::read_modify_verifier);
 
     inherit_placeholder_geometry(&mut p);
     default_text_anchor(&mut p);
@@ -1109,6 +1116,7 @@ fn read_slide(imp: &mut Imp, part: &Part, doc: &Doc, id: SlideId, layout: Layout
         s.background = background(imp, part, csld);
         if let Some(tree) = csld.child("spTree") {
             s.shapes = shapes::sp_tree(imp, part, &mut ctx, tree, 0);
+            shapes::ink_back(&mut s.shapes);
         }
         if let Some(c) = csld.child("controls") {
             let pics = shapes::controls(imp, part, &mut ctx, c);
@@ -1120,6 +1128,7 @@ fn read_slide(imp: &mut Imp, part: &Part, doc: &Doc, id: SlideId, layout: Layout
     }
     if let Some(t) = root.child("timing") {
         s.animations = timing::animations(imp, part, &ctx, t, &s.shapes);
+        timing::media_options(&ctx, t, &mut s.shapes, &mut s.animations);
     }
     if let Some(ext) = root.child("extLst").filter(|e| !has_rel_refs(e)) {
         s.raw_ext = Some(ext.elements().map(|e| part.keep(e)).collect());

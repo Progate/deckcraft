@@ -146,5 +146,5 @@ fn loupe(ui: &Ui, pos: Pos2, c: [u8; 4]) {
     painter.rect_stroke(swatch.expand(2.0), 3, Stroke::new(1.0, t.border), StrokeKind::Outside);
     let label = Rect::from_min_size(pos2(at.x, swatch.max.y + 5.0), vec2(64.0, 16.0));
     painter.rect_filled(label, 3, Color32::WHITE);
-    painter.text(label.center(), egui::Align2::CENTER_CENTER, format!("#{}", hex(c)), theme::bold(11.0), Color32::BLACK);
+    painter.text(label.center(), egui::Align2::CENTER_CENTER, crate::i18n::t(&(format!("#{}", hex(c)))), theme::bold(11.0), Color32::BLACK);
 }
