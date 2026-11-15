@@ -505,13 +505,15 @@ fn pictures_media_and_ink_round_trip() {
     assert_eq!((m.trim_start_ms, m.fade_in_ms), (500, 250));
     assert!(q.media(m.media).is_some_and(|x| x.data.starts_with(b"\x00\x00\x00\x18ftyp")));
     assert!(m.poster.is_some());
-    // Ink comes back as freeform lines in a group. A flat 0.5 stroke keeps the pen width.
+    // Ink is written as freeform lines in a group and read back as ink. A flat 0.5 stroke keeps
+    // the pen width.
     let ink = by_name(&q.slides[2], "Ink");
-    let ShapeKind::Group { children, .. } = &ink.kind else { panic!("ink is not a group: {:?}", ink.kind) };
-    assert_eq!(children.len(), 1);
-    assert!(matches!(children[0].geom, Geom::Custom { .. }));
-    let w = children[0].line.as_ref().and_then(|l| l.width).unwrap_or(0.0);
-    assert!((w - 3.0).abs() < 0.05, "a flat 0.5 stroke keeps the pen width, got {w}");
+    let ShapeKind::Ink { strokes } = &ink.kind else { panic!("ink did not come back as ink: {:?}", ink.kind) };
+    assert_eq!(strokes.len(), 1);
+    assert_eq!(strokes[0].points.len(), 3);
+    assert!((strokes[0].points[1].0 - 150.0).abs() < 0.05 && (strokes[0].points[1].1 - 400.0).abs() < 0.05);
+    assert!((strokes[0].width - 3.0).abs() < 0.05, "a flat 0.5 stroke keeps the pen width, got {}", strokes[0].width);
+    assert_eq!(strokes[0].color, Rgba::rgb(0, 0, 255));
 }
 
 #[test]
@@ -535,8 +537,9 @@ fn pressured_ink_exports_at_its_mean_width() {
     });
     let q = round(&p);
     let ink = by_name(&q.slides[0], "Ink");
-    let ShapeKind::Group { children, .. } = &ink.kind else { panic!("{:?}", ink.kind) };
-    let w = children[0].line.as_ref().and_then(|l| l.width).unwrap_or(0.0);
+    // Read back as ink (the stroke keeps the exported line width).
+    let ShapeKind::Ink { strokes } = &ink.kind else { panic!("{:?}", ink.kind) };
+    let w = strokes[0].width;
     // Full, half, and the 8% floor: (10 + 5 + 0.8) / 3.
     assert!((w - (10.0 + 5.0 + 0.8) / 3.0).abs() < 0.05, "{w}");
 }

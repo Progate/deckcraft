@@ -162,7 +162,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Playback",
             ["Playback"],
             None,
-            "{autoplay?, loop?, rewind?, acrossSlides?, hide?, fullScreen?, volume?: 0..1, trimStart?: ms, trimEnd?: ms, fadeIn?: ms, fadeOut?: ms, ids?}",
+            "{autoplay?, loop?, rewind?, acrossSlides?, hide?, fullScreen?, volume?: 0..1, trimStart?: ms, trimEnd?: ms (cut off the end; p14:trim end), endTime?: ms (where playback ends counted from the start; needs the clip length), fadeIn?: ms, fadeOut?: ms, ids?}",
             has_selection,
             media_options
         ),
@@ -1152,6 +1152,13 @@ fn media_options(s: &mut Session, p: &Value) -> Result<Value> {
             }
             if let Some(v) = ms("trimEnd") {
                 m.trim_end_ms = v;
+            }
+            // Trim Video's End Time is a position; the file keeps what is cut off the end.
+            if let Some(v) = ms("endTime") {
+                if m.duration_ms == 0 {
+                    return Err(bad("media.options", "the clip's length is unknown; use trimEnd"));
+                }
+                m.trim_end_ms = m.duration_ms.saturating_sub(v.max(m.trim_start_ms));
             }
             if let Some(v) = ms("fadeIn") {
                 m.fade_in_ms = v;

@@ -668,10 +668,33 @@ fn text_warp(s: &mut Session, p: &Value) -> Result<Value> {
         Some(_) => return Err(bad("format.textWarp", "`adj` must be an array of numbers")),
     };
     let stored = if clear { None } else { Some(preset.to_string()) };
-    format_body(s, &|b| {
+    let r = format_body(s, &|b| {
         b.warp.clone_from(&stored);
         b.warp_adj.clone_from(&adj);
-    })
+    })?;
+    // Text following a path (Arch, Circle, Button) bends over the whole box: in a one-line WordArt
+    // box (wide and short) the arch would be almost flat, so the box gets at least half its width
+    // in height, centred where it was, the way an arched WordArt looks in PowerPoint.
+    if !clear && deckcraft_geom::warp::is_follow(preset) {
+        let ids: Vec<_> = match &s.doc()?.selection.text {
+            Some(t) if !t.notes => vec![t.shape],
+            _ => s.doc()?.selection.shapes.clone(),
+        };
+        edit_shapes(s, &json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>()}), "format.textWarp", |sh| {
+            if let Some(x) = sh.xfrm.as_mut()
+                && x.h < x.w * 0.5
+            {
+                let h = x.w * 0.5;
+                x.y -= (h - x.h) / 2.0;
+                x.h = h;
+                if let Some(t) = sh.text.as_mut() {
+                    t.body.autofit = Some(deckcraft_model::text::AutoFit::None);
+                }
+            }
+            Ok(())
+        })?;
+    }
+    Ok(r)
 }
 
 fn case(s: &mut Session, p: &Value) -> Result<Value> {

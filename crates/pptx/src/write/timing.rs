@@ -1,7 +1,7 @@
 //! Transitions and the animation timing tree.
 
 use deckcraft_model::anim::{AnimClass, AnimStart, Animation, TextBuild, Transition};
-use deckcraft_model::{Shape, ShapeKind, find_shape};
+use deckcraft_model::{MediaClip, Shape, ShapeId, ShapeKind, find_shape, walk};
 
 use super::shapes::IdMap;
 use super::{Exp, Out};
@@ -570,7 +570,86 @@ fn para_count(s: &Shape) -> u32 {
 }
 
 /// Write `p:timing` for a slide's animations.
+/// The slide's audio and video clips, depth-first (groups included).
+fn media_clips(shapes: &[Shape]) -> Vec<(ShapeId, &MediaClip)> {
+    let mut out = vec![];
+    walk(shapes, &mut |s, _| {
+        if let ShapeKind::Media(m) = &s.kind {
+            out.push((s.id, m));
+        }
+    });
+    out
+}
+
+/// Does `anims` already play `shape`'s media without a click (a Media effect that is With or
+/// After Previous before the first click)? Then "Start: Automatically" is already in the file.
+fn plays_automatically(anims: &[Animation], shape: ShapeId) -> bool {
+    anims
+        .iter()
+        .filter(|a| a.trigger.is_none())
+        .take_while(|a| a.start != AnimStart::OnClick)
+        .any(|a| a.shape == shape && a.class == AnimClass::Media && a.effect == "play")
+}
+
+/// The playback options of one clip as PowerPoint stores them: `p:video`/`p:audio` >
+/// `p:cMediaNode` (volume, mute, Hide During Show, Play Across Slides) > `p:cTn` (Loop until
+/// Stopped as `repeatCount`, Rewind after Playing as `fill="remove"`), with Play Full Screen on
+/// `p:video`.
+fn media_node(w: &mut W, ids: &mut Ids, spid: u32, m: &MediaClip) {
+    let tag = if m.video { "p:video" } else { "p:audio" };
+    w.open(tag, A::new().t("fullScrn", m.video && m.full_screen));
+    let vol = (m.volume.clamp(0.0, 1.0) * 100_000.0).round() as i64;
+    w.open(
+        "p:cMediaNode",
+        A::new()
+            .a("vol", vol)
+            .t("mute", vol == 0)
+            .o("numSld", m.play_across_slides.then_some(999))
+            .o("showWhenStopped", m.hide_while_not_playing.then_some(0)),
+    );
+    w.open(
+        "p:cTn",
+        A::new()
+            .a("id", ids.next())
+            .o("repeatCount", m.loop_play.then_some("indefinite"))
+            .a("fill", if m.rewind { "remove" } else { "hold" })
+            .a("display", 0),
+    );
+    w.open0("p:stCondLst");
+    w.empty("p:cond", A::new().a("delay", "indefinite"));
+    w.close("p:stCondLst");
+    w.close("p:cTn");
+    w.open0("p:tgtEl");
+    w.empty("p:spTgt", A::new().a("spid", spid));
+    w.close("p:tgtEl");
+    w.close("p:cMediaNode");
+    w.close(tag);
+}
+
 pub fn timing(w: &mut W, x: &mut Exp, anims: &[Animation], shapes: &[Shape], idmap: &IdMap) {
+    // "Start: Automatically" is a Play effect at the start of the main sequence (After Previous,
+    // before any click). Clips that ask for it and have none get one, ahead of the slide's own
+    // animations as PowerPoint orders them.
+    let clips: Vec<(ShapeId, &MediaClip)> = media_clips(shapes).into_iter().filter(|(id, _)| idmap.get(*id).is_some()).collect();
+    let auto: Vec<Animation> = clips
+        .iter()
+        .filter(|(id, m)| m.autoplay && !plays_automatically(anims, *id))
+        .map(|(id, m)| Animation {
+            shape: *id,
+            class: AnimClass::Media,
+            effect: "play".into(),
+            start: AnimStart::AfterPrevious,
+            duration_ms: m.duration_ms.max(1),
+            ..Default::default()
+        })
+        .collect();
+    let all: Vec<Animation>;
+    let anims = if auto.is_empty() {
+        anims
+    } else {
+        all = auto.into_iter().chain(anims.iter().cloned()).collect();
+        &all[..]
+    };
     let mut grp_count: std::collections::HashMap<u32, u32> = Default::default();
     let mut main: Vec<Eff> = vec![];
     let mut triggered: Vec<(u32, Vec<Eff>)> = vec![];
@@ -621,7 +700,7 @@ pub fn timing(w: &mut W, x: &mut Exp, anims: &[Animation], shapes: &[Shape], idm
             None => main.extend(effs),
         }
     }
-    if main.is_empty() && triggered.is_empty() {
+    if main.is_empty() && triggered.is_empty() && clips.is_empty() {
         return;
     }
     let mut ids = Ids(0);
@@ -691,6 +770,11 @@ pub fn timing(w: &mut W, x: &mut Exp, anims: &[Animation], shapes: &[Shape], idm
         trig_cond(w);
         w.close("p:nextCondLst");
         w.close("p:seq");
+    }
+    for (id, m) in &clips {
+        if let Some(spid) = idmap.get(*id) {
+            media_node(w, &mut ids, spid, m);
+        }
     }
     w.close("p:childTnLst");
     w.close("p:cTn");

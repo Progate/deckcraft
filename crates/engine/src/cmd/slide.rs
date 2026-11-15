@@ -532,14 +532,14 @@ fn rename(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn section_add(s: &mut Session, p: &Value) -> Result<Value> {
     let at = usize_param(p, "at").unwrap_or(s.doc()?.selection.slide);
-    let name = str_param(p, "name").unwrap_or("Untitled Section").to_string();
+    let name = str_param(p, "name").unwrap_or(crate::localized("Untitled Section", "タイトルなしのセクション")).to_string();
     s.edit(|doc, _| {
         let at = at.min(doc.slides.len().saturating_sub(1));
         let ids: Vec<SlideId> = doc.slides.iter().map(|x| x.id).collect();
         if doc.sections.is_empty() {
             // The slides before `at` go into a "Default Section".
             if at > 0 {
-                doc.sections.push(Section { name: "Default Section".into(), slides: ids.get(..at).map(|x| x.to_vec()).unwrap_or_default() });
+                doc.sections.push(Section { name: default_section().into(), slides: ids.get(..at).map(|x| x.to_vec()).unwrap_or_default() });
             }
             doc.sections.push(Section { name, slides: ids.get(at..).map(|x| x.to_vec()).unwrap_or_default() });
         } else {
@@ -549,7 +549,7 @@ fn section_add(s: &mut Session, p: &Value) -> Result<Value> {
             let k = sec.slides.iter().position(|x| *x == start).unwrap_or(sec.slides.len());
             let tail = sec.slides.split_off(k);
             doc.sections.insert(si + 1, Section { name, slides: tail });
-            doc.sections.retain(|x| !x.slides.is_empty() || x.name != "Default Section");
+            doc.sections.retain(|x| !x.slides.is_empty() || x.name != default_section());
         }
         Ok(json!({"sections": doc.sections.len()}))
     })
@@ -640,6 +640,11 @@ fn from_outline(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Ok(json!({"slides": n}))
     })
+}
+
+/// The section PowerPoint makes for the slides before the first one added ("既定のセクション" in Japanese).
+fn default_section() -> &'static str {
+    crate::localized("Default Section", "既定のセクション")
 }
 
 #[cfg(test)]

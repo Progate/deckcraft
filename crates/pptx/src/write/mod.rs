@@ -377,7 +377,7 @@ fn slide_ext_list(w: &mut W, raw: Option<&str>, comment_rel: Option<&str>) {
     w.close("p:extLst");
 }
 
-fn notes_master_shapes(size: deckcraft_geom::Size) -> Vec<Shape> {
+pub fn notes_master_shapes(size: deckcraft_geom::Size) -> Vec<Shape> {
     let (w, h) = (size.width, size.height);
     let mk = |id: u32, name: &str, kind: PhType, idx: u32, x: f64, y: f64, ww: f64, hh: f64| Shape {
         id: ShapeId(id),
@@ -709,9 +709,10 @@ pub fn export(p: &Presentation, main_ct: &str) -> Result<Vec<u8>, PptxError> {
     x.pkg.xml_part("ppt/tableStyles.xml", CT_TABLE_STYLES, ts);
     let pxml = presentation_xml(&mut x, &mut pres, &master_rids, notes_master_rid.as_deref(), handout_rid.as_deref(), &slide_rids);
     x.pkg.xml_part("ppt/presentation.xml", main_ct, pxml);
-    // Kept parts never replace a part the writer makes.
-    let kept: Vec<_> = p
-        .kept_parts
+    // Kept parts never replace a part the writer makes. Mark as Final goes into the custom
+    // properties among them.
+    let kept_all = crate::protect::with_mark_as_final(&p.kept_parts, p.props.mark_as_final);
+    let kept: Vec<_> = kept_all
         .iter()
         .filter(|k| {
             let n = k.name.to_ascii_lowercase();
@@ -794,7 +795,9 @@ fn slide_xml(x: &mut Exp, o: &mut Out, s: &Slide, comment_rel: Option<&str>) -> 
     if let Some(t) = &s.transition {
         timing::transition(&mut w, x, o, t);
     }
-    if !s.animations.is_empty() {
+    // Media clips keep their playback options in the timing tree even without animations.
+    let has_media = s.shapes.iter().any(|sh| matches!(sh.kind, deckcraft_model::ShapeKind::Media(_)) || sh.is_group());
+    if !s.animations.is_empty() || has_media {
         timing::timing(&mut w, x, &s.animations, &s.shapes, &ids);
     }
     slide_ext_list(&mut w, s.raw_ext.as_deref(), comment_rel);
@@ -1113,6 +1116,10 @@ fn presentation_xml(x: &mut Exp, o: &mut Out, masters: &[(u64, String)], notes: 
     cust_data(&mut w, x, o, &p.tags);
     let dts = if p.default_text_style.is_empty() { defaults::default_text_style() } else { p.default_text_style.clone() };
     dml::list_style(&mut w, x, o, "p:defaultTextStyle", &dts);
+    // CT_Presentation puts the password to modify after defaultTextStyle, before extLst.
+    if let Some(v) = &p.modify_verifier {
+        crate::protect::write_modify_verifier(&mut w, v);
+    }
     let sections = section_slides(p);
     let raw = p.raw_ext.as_deref().filter(|r| !r.trim().is_empty());
     if !sections.is_empty() || raw.is_some() {
@@ -1174,7 +1181,14 @@ fn pres_props_xml(p: &Presentation) -> Vec<u8> {
 
 fn view_props_xml(p: &Presentation) -> Vec<u8> {
     let mut w = W::new();
-    root_open(&mut w, "p:viewPr", A::new());
+    // The view PowerPoint opens the file in (Normal when absent). Only the standard values go out.
+    let last = p.last_view.as_deref().filter(|v| {
+        matches!(
+            *v,
+            "sldMasterView" | "notesMasterView" | "handoutView" | "notesView" | "outlineView" | "sldSorterView" | "sldThumbnailView" | "sldView"
+        )
+    });
+    root_open(&mut w, "p:viewPr", A::new().o("lastView", last));
     w.open0("p:normalViewPr");
     w.empty("p:restoredLeft", A::new().a("sz", 15620));
     w.empty("p:restoredTop", A::new().a("sz", 94660));

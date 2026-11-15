@@ -10,9 +10,19 @@ use crate::{Result, Session, Target, UiRequest};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!("comment.add", "New Comment", ["Review", "Comments"], Some("Cmd+Alt+M"), "{text, x?, y?, id?: shape}", has_slide, add),
+        cmd!(
+            "comment.add",
+            "New Comment",
+            ["Review", "Comments"],
+            Some("Cmd+Alt+M"),
+            "{text, x?, y?, id?: shape, author?: (default: File › Options user name)}",
+            has_slide,
+            add
+        ),
+        cmd!(noundo "file.options", "Options", ["File"], None, "{userName?: string (comment author, File › Options › General)} → {userName}", always, options),
         cmd!("comment.reply", "Reply", ["Comments"], None, "{index, text}", has_slide, reply),
         cmd!("comment.delete", "Delete Comment", ["Review", "Comments"], None, "{index? | all?: bool}", has_slide, delete),
+        cmd!("comment.deleteReply", "Delete Reply", ["Comments"], None, "{index, reply: index}", has_slide, delete_reply),
         cmd!("comment.resolve", "Resolve Thread", ["Comments"], None, "{index, resolved?: bool}", has_slide, resolve),
         cmd!(query "comment.list", "Comments", [], None, "{slide?} → comments", has_slide, list),
         cmd!(
@@ -111,7 +121,7 @@ fn now() -> String {
 
 fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let text = str_param(p, "text").ok_or_else(|| bad("comment.add", "missing `text`"))?.to_string();
-    let author = s.prefs.author.clone();
+    let author = str_param(p, "author").map(String::from).unwrap_or_else(|| s.prefs.author.clone());
     let shape = id_param(p, "id", "comment.add")?.or_else(|| s.active().and_then(|d| d.selection.shapes.first().copied()));
     let (x, y) = (f64_or(p, "x", 10.0), f64_or(p, "y", 10.0));
     s.edit(|doc, sel| {
@@ -122,6 +132,14 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 
+/// File › Options › General › User name: who new comments and replies are by.
+fn options(s: &mut Session, p: &Value) -> Result<Value> {
+    if let Some(name) = str_param(p, "userName") {
+        s.prefs.author = name.chars().take(256).collect();
+    }
+    Ok(json!({"userName": s.prefs.author}))
+}
+
 fn reply(s: &mut Session, p: &Value) -> Result<Value> {
     let i = usize_param(p, "index").ok_or_else(|| bad("comment.reply", "missing `index`"))?;
     let text = str_param(p, "text").unwrap_or("").to_string();
@@ -130,6 +148,22 @@ fn reply(s: &mut Session, p: &Value) -> Result<Value> {
         let sl = Arc::make_mut(doc.slides.get_mut(sel.slide).ok_or_else(|| bad("comment.reply", "no slide"))?);
         let c = sl.comments.get_mut(i).ok_or_else(|| bad("comment.reply", "no such comment"))?;
         c.replies.push(Comment { author, text, date: now(), ..Default::default() });
+        Ok(())
+    })?;
+    ok()
+}
+
+/// Delete one reply of comment `index` on the current slide (the thread stays).
+fn delete_reply(s: &mut Session, p: &Value) -> Result<Value> {
+    let i = usize_param(p, "index").ok_or_else(|| bad("comment.deleteReply", "missing `index`"))?;
+    let k = usize_param(p, "reply").ok_or_else(|| bad("comment.deleteReply", "missing `reply`"))?;
+    s.edit(|doc, sel| {
+        let sl = Arc::make_mut(doc.slides.get_mut(sel.slide).ok_or_else(|| bad("comment.deleteReply", "no slide"))?);
+        let c = sl.comments.get_mut(i).ok_or_else(|| bad("comment.deleteReply", "no such comment"))?;
+        if k >= c.replies.len() {
+            return Err(bad("comment.deleteReply", "no such reply"));
+        }
+        c.replies.remove(k);
         Ok(())
     })?;
     ok()
@@ -234,6 +268,14 @@ fn accessibility(s: &mut Session, _p: &Value) -> Result<Value> {
         if sl.title().trim().is_empty() {
             out.push(json!({"slide": i, "issue": "Missing slide title"}));
         }
+        // Reading order follows the order of the shapes on the slide: a screen reader should
+        // meet the title first.
+        let first = sl.shapes.iter().find(|sh| !sh.hidden && !sh.decorative);
+        if let Some(title) = sl.shapes.iter().find(|sh| sh.ph_type().is_some_and(|k| k.is_title()) && sh.text.as_ref().is_some_and(|t| !t.is_empty()))
+            && first.is_some_and(|f| f.id != title.id)
+        {
+            out.push(json!({"slide": i, "shape": title.id, "name": title.name, "issue": "Check reading order: the title is not read first"}));
+        }
         deckcraft_model::walk(&sl.shapes, &mut |sh, _| {
             let needs_alt = matches!(
                 sh.kind,
@@ -262,7 +304,11 @@ fn accessibility(s: &mut Session, _p: &Value) -> Result<Value> {
                         continue;
                     }
                     let fg = deckcraft_model::resolve::text_color(&ctx, &rp);
-                    if fg.contrast(bg) < 3.0 {
+                    // WCAG 2 AA: 4.5:1 for normal text, 3:1 for large text (18 pt, or 14 pt bold).
+                    let size = rp.size.unwrap_or(18.0);
+                    let large = size >= 18.0 || (rp.bold == Some(true) && size >= 14.0);
+                    let need = if large { 3.0 } else { 4.5 };
+                    if fg.contrast(bg) < need {
                         out.push(json!({"slide": i, "shape": sh.id, "name": sh.name, "issue": format!("Hard-to-read text contrast ({:.1}:1)", fg.contrast(bg))}));
                     }
                 }

@@ -195,6 +195,14 @@ impl FontDb {
                 found.unwrap_or_else(first)
             }
         };
+        // A bold or italic run: the fallback family's own bold or italic face when one is installed
+        // (Noto Sans JP Bold for Japanese), not its regular face, which would draw bold text thin.
+        let f = if (style.contains("Bold") && f.weight < 600.0) || (style.contains("Italic") && !f.italic) {
+            let styled = self.face(&f.family, style);
+            if styled.family.eq_ignore_ascii_case(&f.family) && styled.id() != f.id() && covers_cluster(&styled, cluster) { styled } else { f }
+        } else {
+            f
+        };
         // A pictograph that defaults to text presentation (⚠ ♥ ⬆ ▶) whose first fallback is the
         // colour emoji font: PowerPoint draws it from a plain symbol font.
         if f.is_color()

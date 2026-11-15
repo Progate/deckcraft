@@ -120,9 +120,15 @@ fn section_header(app: &mut SlideApp, ui: &mut Ui, h: &Header<'_>) -> Rect {
             *text = buf;
         }
     } else {
-        painter.text(pos2(name_rect.min.x, r.center().y), Align2::LEFT_CENTER, h.name, theme::bold(13.0), t.text);
+        painter.text(pos2(name_rect.min.x, r.center().y), Align2::LEFT_CENTER, crate::i18n::t(h.name), theme::bold(13.0), t.text);
     }
-    painter.text(pos2(r.max.x - 16.0, r.center().y), Align2::RIGHT_CENTER, format!("({})", h.count), theme::font(12.0), t.text_dim);
+    painter.text(
+        pos2(r.max.x - 16.0, r.center().y),
+        Align2::RIGHT_CENTER,
+        crate::i18n::t(&(format!("({})", h.count))),
+        theme::font(12.0),
+        t.text_dim,
+    );
     if cresp.clicked()
         && let Some(id) = h.first
     {
@@ -144,31 +150,31 @@ fn section_header(app: &mut SlideApp, ui: &mut Ui, h: &Header<'_>) -> Rect {
     let index = h.index;
     let name = h.name.to_string();
     resp.context_menu(|ui| {
-        if ui.button("Rename Section…").clicked() {
+        if ui.button(tl!("Rename Section…")).clicked() {
             let mut d = crate::dialogs::Dialog::new("renameSection");
             d.params = json!({"index": index, "name": name});
             app.dialog = Some(d);
             ui.close();
         }
-        if ui.button("Add Section").clicked() {
+        if ui.button(tl!("Add Section")).clicked() {
             if let Some(at) = app.session.active().map(|st| st.selection.slide) {
                 let _ = app.run("section.add", json!({"at": at}));
             }
             ui.close();
         }
-        if ui.button("Remove Section").clicked() {
+        if ui.button(tl!("Remove Section")).clicked() {
             let _ = app.run("section.remove", json!({"index": index}));
             ui.close();
         }
-        if ui.button("Remove Section & Slides").clicked() {
+        if ui.button(tl!("Remove Section & Slides")).clicked() {
             let _ = app.run("section.remove", json!({"index": index, "slides": true}));
             ui.close();
         }
-        if ui.button("Move Section Up").clicked() {
+        if ui.button(tl!("Move Section Up")).clicked() {
             let _ = app.run("section.move", json!({"index": index, "to": index.saturating_sub(1)}));
             ui.close();
         }
-        if ui.button("Move Section Down").clicked() {
+        if ui.button(tl!("Move Section Down")).clicked() {
             let _ = app.run("section.move", json!({"index": index, "to": index + 1}));
             ui.close();
         }
@@ -220,9 +226,21 @@ fn place_slides(app: &mut SlideApp, ui: &mut Ui, g: &Grid<'_>, budget: &mut u32,
                     Stroke::new(if selected { 3.0 } else { 1.0 }, if selected { t.accent } else { t.border }),
                     egui::StrokeKind::Outside,
                 );
-                p.text(pos2(img.min.x, img.max.y + 12.0), Align2::LEFT_CENTER, format!("{}", i + 1), theme::font(12.0), t.text_dim);
+                p.text(
+                    pos2(img.min.x, img.max.y + 12.0),
+                    Align2::LEFT_CENTER,
+                    crate::i18n::t(&(format!("{}", i + 1))),
+                    theme::font(12.0),
+                    t.text_dim,
+                );
                 if let Some(tr) = g.doc.slides.get(i).and_then(|s| s.transition.as_ref()).filter(|tr| tr.kind != "none") {
-                    p.text(pos2(img.max.x, img.max.y + 12.0), Align2::RIGHT_CENTER, format!("★ {}", tr.kind), theme::font(10.5), t.text_faint);
+                    p.text(
+                        pos2(img.max.x, img.max.y + 12.0),
+                        Align2::RIGHT_CENTER,
+                        crate::i18n::t(&(format!("★ {}", tr.kind))),
+                        theme::font(10.5),
+                        t.text_faint,
+                    );
                 }
                 if resp.clicked() {
                     let add = ui.input(|inp| inp.modifiers.command);
@@ -272,7 +290,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_space(24.0);
-            if ui.add(egui::Button::new("Add Section").stroke(Stroke::new(1.0, t.border))).clicked() {
+            if ui.add(egui::Button::new(tl!("Add Section")).stroke(Stroke::new(1.0, t.border))).clicked() {
                 let _ = app.run("section.add", json!({"at": cur}));
             }
         });
@@ -413,7 +431,7 @@ pub fn notes_page(app: &mut SlideApp, ui: &mut Ui) {
     let look = crate::notes::Look { size: 14.0, color: Some(Color32::from_gray(30)) };
     let width = notes_rect.width();
     let r = crate::notes::editor(&mut child, &mut draft, &look, |e| {
-        e.id(edit_id).hint_text("Click to add text").desired_width(width).desired_rows(12).frame(egui::Frame::NONE)
+        e.id(edit_id).hint_text(tl!("Click to add text")).desired_width(width).desired_rows(12).frame(egui::Frame::NONE)
     })
     .response
     .response;
@@ -482,25 +500,89 @@ fn outline_estimate(s: &deckcraft_model::Slide) -> f32 {
     30.0 + lines as f32 * 19.0
 }
 
+/// Ask the outline to put the caret in the title of slide `id` when it is next drawn.
+fn request_focus(ui: &Ui, id: Option<u64>) {
+    if let Some(id) = id {
+        ui.data_mut(|d| d.insert_temp(egui::Id::new("ol-focus-slide"), id));
+    }
+}
+
+/// Whether the outline asked for the title of slide `id` to take the caret (asking once).
+fn take_focus_request(ui: &Ui, id: u32) -> bool {
+    let key = egui::Id::new("ol-focus-slide");
+    if ui.data(|d| d.get_temp::<u64>(key)) == Some(u64::from(id)) {
+        ui.data_mut(|d| d.remove::<u64>(key));
+        return true;
+    }
+    false
+}
+
+/// Tab on slide `i`'s title: the slide becomes text at the end of the previous slide's body
+/// (its title as a first-level line, its text one level deeper) and is deleted.
+fn demote_slide(app: &mut SlideApp, i: usize, title: &str) {
+    let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
+    let (Some(prev), Some(this)) = (doc.slides.get(i - 1), doc.slides.get(i)) else { return };
+    let body_of = |s: &deckcraft_model::Slide| {
+        s.shapes.iter().find(|x| matches!(x.ph_type(), Some(deckcraft_model::PhType::Body | deckcraft_model::PhType::Obj))).map(|x| {
+            let text = x.text.as_ref().map(|tb| {
+                tb.paragraphs.iter().filter(|p| !p.is_empty()).map(|p| format!("{}{}", "\t".repeat(p.level as usize), p.text())).collect::<Vec<_>>()
+            });
+            (x.id.0, text.unwrap_or_default())
+        })
+    };
+    let Some((prev_body, mut lines)) = body_of(prev) else { return };
+    lines.push(title.to_string());
+    if let Some((_, own)) = body_of(this) {
+        lines.extend(own.into_iter().map(|l| format!("\t{l}")));
+    }
+    let _ = app.run("slide.go", json!({"index": i - 1}));
+    let _ = app.run("text.set", json!({"id": prev_body, "text": lines.join("\n"), "outline": true}));
+    let _ = app.run("slide.delete", json!({"index": i}));
+}
+
 /// One slide in the outline: number, title editor, then its other text.
 fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deckcraft_model::Slide, cur: usize) {
     let title_shape = s.shapes.iter().find(|x| x.ph_type().is_some_and(|k| k.is_title())).map(|x| x.id.0);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(format!("{}", i + 1)).color(t.text_dim));
+        ui.label(egui::RichText::new(crate::i18n::t(&(format!("{}", i + 1)))).color(t.text_dim));
         let (r, _) = ui.allocate_exact_size(vec2(14.0, 10.0), Sense::hover());
         ui.painter().rect_stroke(r, CornerRadius::same(1), Stroke::new(1.0, if i == cur { t.accent } else { t.text_dim }), egui::StrokeKind::Inside);
         let id = egui::Id::new(("ol-title", s.id.0));
         let cur_title = s.title();
         let mut v: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_else(|| cur_title.clone()));
-        let resp = ui.add(egui::TextEdit::singleline(&mut v).font(theme::bold(14.0)).frame(egui::Frame::NONE).desired_width(f32::INFINITY));
+        // Tab on a title demotes the slide into the previous one's text, as in PowerPoint.
+        let focused = ui.memory(|m| m.has_focus(id));
+        let demote = focused && i > 0 && ui.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
+        let resp = ui.add(egui::TextEdit::singleline(&mut v).id(id).font(theme::bold(14.0)).frame(egui::Frame::NONE).desired_width(f32::INFINITY));
+        if take_focus_request(ui, s.id.0) {
+            resp.request_focus();
+        }
         if resp.gained_focus() {
             let _ = app.run("slide.go", json!({"index": i}));
         }
-        if resp.lost_focus()
+        let enter = resp.lost_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+        // Enter splits the title at the caret, as PowerPoint's outline does: the text after the
+        // caret becomes the title of a new slide right after this one (empty at the end).
+        let mut rest = String::new();
+        if enter {
+            let caret =
+                egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range()).map_or(v.chars().count(), |r| r.primary.index.0);
+            let at = v.char_indices().nth(caret).map_or(v.len(), |(b, _)| b);
+            rest = v.split_off(at);
+        }
+        if (resp.lost_focus() || demote)
             && v != cur_title
             && let Some(tid) = title_shape
         {
             let _ = app.run("text.set", json!({"id": tid, "text": v}));
+        }
+        if demote {
+            demote_slide(app, i, &v);
+        } else if enter {
+            // Enter after a title: a new slide below, its title ready to type.
+            if let Ok(r) = app.session.execute("slide.new", &json!({"at": i + 1, "layout": "titleAndContent", "title": rest})) {
+                request_focus(ui, r.get("id").and_then(serde_json::Value::as_u64));
+            }
         }
         if !resp.has_focus() {
             ui.data_mut(|d| d.remove::<String>(id));
@@ -508,22 +590,66 @@ fn outline_slide(app: &mut SlideApp, ui: &mut Ui, t: &Tokens, i: usize, s: &deck
             ui.data_mut(|d| d.insert_temp(id, v));
         }
     });
+    // Body placeholders show even when empty (their text can be typed here), other shapes only
+    // when they have text.
+    let empty = deckcraft_model::text::TextBody::default();
     for sh in s.shapes.iter().filter(|x| !x.ph_type().is_some_and(|k| k.is_title())) {
-        let Some(tb) = &sh.text else { continue };
-        if tb.is_empty() {
-            continue;
-        }
+        let is_body = matches!(sh.ph_type(), Some(deckcraft_model::PhType::Body | deckcraft_model::PhType::Obj));
+        let tb = match &sh.text {
+            Some(tb) if !tb.is_empty() || is_body => tb,
+            None if is_body => &empty,
+            _ => continue,
+        };
         let id = egui::Id::new(("ol-body", s.id.0, sh.id.0));
         let cur_text: String = tb.paragraphs.iter().map(|p| format!("{}{}", "\t".repeat(p.level as usize), p.text())).collect::<Vec<_>>().join("\n");
         let mut v: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_else(|| cur_text.clone()));
+        // Tab / Shift+Tab change the level of the caret's line; Shift+Tab on a first-level line
+        // makes it a slide of its own (with the lines after it), as in PowerPoint's outline.
+        if ui.memory(|m| m.has_focus(id)) {
+            let tab = ui.input_mut(|inp| inp.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
+            let back = ui.input_mut(|inp| inp.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab));
+            if tab || back {
+                let caret = egui::TextEdit::load_state(ui.ctx(), id).and_then(|st| st.cursor.char_range()).map_or(0, |r| r.primary.index.0);
+                let mut lines: Vec<String> = v.split('\n').map(String::from).collect();
+                let line = v.chars().take(caret).filter(|c| *c == '\n').count().min(lines.len().saturating_sub(1));
+                let level = lines.get(line).map_or(0, |l| l.chars().take_while(|c| *c == '\t').count());
+                if back && level == 0 {
+                    let rest: Vec<String> = lines.split_off(line);
+                    let title = rest.first().cloned().unwrap_or_default();
+                    let body = rest.iter().skip(1).map(|l| l.strip_prefix('\t').unwrap_or(l).to_string()).collect::<Vec<_>>().join("\n");
+                    let _ = app.run("text.set", json!({"id": sh.id.0, "text": lines.join("\n"), "outline": true}));
+                    if let Ok(r) = app.session.execute("slide.new", &json!({"at": i + 1, "layout": "titleAndContent", "title": title, "body": body}))
+                    {
+                        request_focus(ui, r.get("id").and_then(serde_json::Value::as_u64));
+                    }
+                    ui.data_mut(|d| d.remove::<String>(id));
+                    ui.memory_mut(|m| m.surrender_focus(id));
+                    continue;
+                }
+                if let Some(l) = lines.get_mut(line) {
+                    if tab && level < 8 {
+                        l.insert(0, '\t');
+                    } else if back {
+                        l.remove(0);
+                    }
+                }
+                v = lines.join("\n");
+                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v, "outline": true}));
+                let moved = if tab { caret + 1 } else { caret.saturating_sub(1) };
+                if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), id) {
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(moved))));
+                    st.store(ui.ctx(), id);
+                }
+            }
+        }
         ui.horizontal(|ui| {
             ui.add_space(36.0);
-            let resp = ui.add(egui::TextEdit::multiline(&mut v).frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(1));
+            let resp = ui.add(egui::TextEdit::multiline(&mut v).id(id).frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(1));
             if resp.gained_focus() {
                 let _ = app.run("slide.go", json!({"index": i}));
             }
             if resp.lost_focus() && v != cur_text {
-                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v}));
+                let _ = app.run("text.set", json!({"id": sh.id.0, "text": v, "outline": true}));
             }
             if !resp.has_focus() {
                 ui.data_mut(|d| d.remove::<String>(id));

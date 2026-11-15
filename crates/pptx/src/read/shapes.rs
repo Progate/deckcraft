@@ -792,3 +792,45 @@ fn cell(imp: &mut Imp, part: &Part, tc: &El) -> Cell {
     }
     c
 }
+
+/// Ink written by DeckCraft (a group named `Ink…` of stroked, unfilled freeforms named `Ink N`,
+/// see `write::shapes::ink_shape`) comes back as ink, so it stays ink after a save and reopen
+/// (Draw › Ink to Shape keeps working). Other groups are left alone.
+pub fn ink_back(shapes: &mut [Shape]) {
+    for sh in shapes.iter_mut() {
+        let ShapeKind::Group { children, .. } = &sh.kind else { continue };
+        if !sh.name.starts_with("Ink") || children.is_empty() {
+            continue;
+        }
+        let mut strokes = Vec::new();
+        for c in children {
+            let (Geom::Custom { paths }, Some(x), Some(line)) = (&c.geom, c.xfrm.as_ref(), c.line.as_ref()) else {
+                strokes.clear();
+                break;
+            };
+            if !c.name.starts_with("Ink") || !matches!(c.fill, Some(deckcraft_model::Fill::None)) {
+                strokes.clear();
+                break;
+            }
+            let Some(path) = paths.first() else { continue };
+            let (sx, sy) = (x.w / path.w.max(1e-9), x.h / path.h.max(1e-9));
+            let nums: Vec<f64> = path.d.split_whitespace().filter_map(|t| t.parse::<f64>().ok()).collect();
+            let points: Vec<(f64, f64, f32)> = nums.as_chunks::<2>().0.iter().map(|[px, py]| (x.x + px * sx, x.y + py * sy, 0.5)).collect();
+            let color = match line.fill.as_ref() {
+                Some(deckcraft_model::Fill::Solid { color }) => color.clone(),
+                _ => deckcraft_model::style::ColorRef::rgb(deckcraft_color::Rgba::BLACK),
+            };
+            let highlighter = color.alpha() < 0.99;
+            let rgb = match &color.base {
+                deckcraft_model::style::ColorBase::Rgb { rgb } => *rgb,
+                _ => deckcraft_color::Rgba::BLACK,
+            };
+            if points.len() >= 2 {
+                strokes.push(deckcraft_model::InkStroke { points, color: rgb.with_alpha(255), width: line.width.unwrap_or(1.5), highlighter });
+            }
+        }
+        if !strokes.is_empty() {
+            sh.kind = ShapeKind::Ink { strokes };
+        }
+    }
+}

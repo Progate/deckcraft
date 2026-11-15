@@ -518,6 +518,8 @@ fn print_previews_pages_and_prints_a_pdf() {
     h.run_steps(2);
     assert!(h.query_by_label_contains("outside them").is_some(), "a bad range says why");
     h.state_mut().backstage.as_mut().unwrap().print_range = "1-2".into();
+    // The PDF viewer printer (the default, Save as PDF, asks where to save instead).
+    h.state_mut().backstage.as_mut().unwrap().print_to_file = false;
     h.run_steps(2);
     click_on_page(&h, "Print");
     h.run_steps(2);

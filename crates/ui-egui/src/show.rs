@@ -90,7 +90,11 @@ struct Prefetch {
 }
 
 fn render_threads() -> u16 {
-    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
+    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+        0
+    } else {
+        std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -406,7 +410,11 @@ fn quad_mesh(tex: Option<egui::TextureId>, rect: Rect, l: &Layer, color: Color32
 /// Render the backgrounds and contents of a transition's two slides into textures, once.
 fn part_textures(ctx: &egui::Context, doc: &Presentation, from: Option<usize>, to: usize, size: (u32, u32)) -> [Option<TextureHandle>; 4] {
     use deckcraft_render::SlidePart;
-    let threads = if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
+    let threads = if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+        0
+    } else {
+        std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0)
+    };
     let opts = RenderOpts { scale: size.0 as f64 / doc.slide_size.width.max(1.0), size: Some(size), threads, ..Default::default() };
     let tex = |i: usize, part: SlidePart, name: &str| {
         let img = deckcraft_render::render_slide_part(doc, i, part, &opts);
@@ -769,8 +777,11 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         };
         if let (Some((from, m)), Some(tr)) = (morph, show.trans.as_mut()) {
             let f = |id: ShapeId| ShapeState { opacity: m.opacity_of(id), ..Default::default() };
-            let threads =
-                if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
+            let threads = if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+                0
+            } else {
+                std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0)
+            };
             let opts =
                 RenderOpts { scale: size.0 as f64 / doc.slide_size.width.max(1.0), size: Some(size), state: Some(&f), threads, ..Default::default() };
             let text: Vec<deckcraft_render::TextMorph> = m
@@ -896,7 +907,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         let w = (28.0 + label.len() as f32 * 10.0).clamp(160.0, full.width() - 32.0);
         let r = Rect::from_min_size(pos2(full.min.x + 16.0, full.max.y - 96.0), vec2(w, 36.0));
         painter.rect_filled(r, CornerRadius::same(6), Color32::from_black_alpha(190));
-        painter.text(r.center(), Align2::CENTER_CENTER, label, theme::font(18.0), Color32::WHITE);
+        painter.text(r.center(), Align2::CENTER_CENTER, crate::i18n::t(&(label)), theme::font(18.0), Color32::WHITE);
         ctx.request_repaint_after(std::time::Duration::from_millis(200));
     }
     // Pen.
@@ -965,7 +976,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
                 .max_rect(Rect::from_min_max(pos2(bar.max.x - 260.0, bar.min.y), bar.max))
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
-        if child.button("Close").clicked() {
+        if child.button(tl!("Close")).clicked() {
             keep = false;
         }
         if child.button("▶").clicked() {
@@ -983,7 +994,8 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         painter.rect_filled(bar, CornerRadius::same(17), Color32::from_black_alpha(140));
         let mut child =
             ui.new_child(egui::UiBuilder::new().max_rect(bar.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        let b = |ui: &mut Ui, s: &str| ui.add(egui::Button::new(egui::RichText::new(s).color(Color32::WHITE).size(15.0)).frame(false));
+        let b =
+            |ui: &mut Ui, s: &str| ui.add(egui::Button::new(egui::RichText::new(crate::i18n::t(s)).color(Color32::WHITE).size(15.0)).frame(false));
         if b(&mut child, "◀").clicked() {
             let a = show.state.prev(&doc);
             show.apply(a, &doc, now);
@@ -1662,7 +1674,7 @@ fn paint_grid(painter: &egui::Painter, ctx: &egui::Context, show: &mut Show, doc
     let aspect = slide_aspect(doc);
     let cells = see_all_cells(full, slides.len(), aspect);
     painter.rect_filled(full, CornerRadius::ZERO, Color32::from_gray(16));
-    painter.text(pos2(full.center().x, full.min.y + 28.0), Align2::CENTER_CENTER, "All slides", theme::font(20.0), Color32::WHITE);
+    painter.text(pos2(full.center().x, full.min.y + 28.0), Align2::CENTER_CENTER, tl!("All slides"), theme::font(20.0), Color32::WHITE);
     if doc.slides.len() > GRID_CAP {
         painter.text(
             pos2(full.center().x, full.min.y + 50.0),
@@ -1752,7 +1764,11 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
     let mut actions = vec![];
     // The presenter window is dark; default buttons draw dark text on it (#221).
     let button = |ui: &mut Ui, s: &str| {
-        ui.add(egui::Button::new(egui::RichText::new(s).size(15.0).color(Color32::WHITE)).fill(Color32::from_gray(60)).min_size(vec2(0.0, 30.0)))
+        ui.add(
+            egui::Button::new(egui::RichText::new(crate::i18n::t(s)).size(15.0).color(Color32::WHITE))
+                .fill(Color32::from_gray(60))
+                .min_size(vec2(0.0, 30.0)),
+        )
     };
     ctx.show_viewport_immediate(
         egui::ViewportId::from_hash_of("deckcraft_presenter"),
@@ -1766,15 +1782,19 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
             let paused = show.timer.paused();
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(Color32::from_gray(24)).inner_margin(egui::Margin::same(16))).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format_elapsed(elapsed)).size(22.0).color(if paused {
+                    ui.label(egui::RichText::new(crate::i18n::t(&(format_elapsed(elapsed)))).size(22.0).color(if paused {
                         Color32::from_gray(160)
                     } else {
                         Color32::WHITE
                     }));
                     ui.add_space(12.0);
-                    ui.label(egui::RichText::new(clock.clone()).size(16.0).color(Color32::from_gray(200)));
+                    ui.label(egui::RichText::new(crate::i18n::t(&(clock.clone()))).size(16.0).color(Color32::from_gray(200)));
                     ui.add_space(20.0);
-                    ui.label(egui::RichText::new(format!("Slide {} of {}", cur + 1, doc.slides.len())).size(16.0).color(Color32::from_gray(200)));
+                    ui.label(
+                        egui::RichText::new(crate::i18n::t(&(format!("Slide {} of {}", cur + 1, doc.slides.len()))))
+                            .size(16.0)
+                            .color(Color32::from_gray(200)),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if button(ui, "End Show").clicked() {
                             *keep = false;
@@ -1835,24 +1855,24 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
                     ui.painter().rect_filled(cr, CornerRadius::ZERO, c);
                 }
                 let nr = next_rect(right, doc);
-                ui.painter().text(right.min, Align2::LEFT_TOP, "Next", theme::font(13.0), Color32::from_gray(170));
+                ui.painter().text(right.min, Align2::LEFT_TOP, tl!("Next"), theme::font(13.0), Color32::from_gray(170));
                 match &next_tex {
                     Some(t) => {
                         ui.painter().image(t.id(), nr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                     }
                     None => {
                         ui.painter().rect_filled(nr, CornerRadius::ZERO, Color32::from_gray(40));
-                        ui.painter().text(nr.center(), Align2::CENTER_CENTER, "End of slide show", theme::font(13.0), Color32::from_gray(170));
+                        ui.painter().text(nr.center(), Align2::CENTER_CENTER, tl!("End of slide show"), theme::font(13.0), Color32::from_gray(170));
                     }
                 }
                 let notes_head = Rect::from_min_size(pos2(right.min.x, nr.max.y + 12.0), vec2(right.width(), 28.0));
                 let mut head = ui.new_child(egui::UiBuilder::new().max_rect(notes_head));
                 head.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Notes").size(13.0).color(Color32::from_gray(170)));
+                    ui.label(egui::RichText::new(tl!("Notes")).size(13.0).color(Color32::from_gray(170)));
                     if ui.button("A-").clicked() {
                         show.nudge_notes(-NOTES_STEP);
                     }
-                    ui.label(egui::RichText::new(format!("{}", show.notes_px as i32)).size(13.0).color(Color32::from_gray(200)));
+                    ui.label(egui::RichText::new(crate::i18n::t(&(format!("{}", show.notes_px as i32)))).size(13.0).color(Color32::from_gray(200)));
                     if ui.button("A+").clicked() {
                         show.nudge_notes(NOTES_STEP);
                     }
@@ -1861,7 +1881,9 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(notes_rect));
                 egui::ScrollArea::vertical().show(&mut child, |ui| {
                     ui.label(
-                        egui::RichText::new(if notes.is_empty() { "No notes." } else { &notes }).size(show.notes_px).color(Color32::from_gray(230)),
+                        egui::RichText::new(crate::i18n::t(if notes.is_empty() { "No notes." } else { &notes }))
+                            .size(show.notes_px)
+                            .color(Color32::from_gray(230)),
                     );
                 });
             });

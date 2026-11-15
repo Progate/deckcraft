@@ -76,7 +76,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Text",
             [],
             None,
-            "{id?, text, cell?: [r, c]} — replaces the whole text, keeping the first run's formatting",
+            "{id?, text, cell?: [r, c], outline?: bool (leading tabs alone give every line its level, as the outline view types it)} — replaces the whole text, keeping the first run's formatting",
             has_slide,
             set
         ),
@@ -1223,6 +1223,7 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let cell = p.get("cell").and_then(Value::as_array).and_then(|a| Some((a.first()?.as_u64()? as usize, a.get(1)?.as_u64()? as usize)));
     let inherited = inherited_aligns(s, id);
+    let outline = bool_or(p, "outline", false);
     edit_shapes(s, &json!({"id": id}), "text.set", |sh| {
         let target = match (&mut sh.kind, cell) {
             (ShapeKind::Table(t), Some((r, c))) => t.cell_mut(r, c).map(|x| &mut x.text),
@@ -1234,8 +1235,11 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
         let levels: Vec<(u8, deckcraft_model::text::ParaProps)> = body.paragraphs.iter().map(|p| (p.level, p.props.clone())).collect();
         let mut nb = TextBody::from_text(&text);
         for (i, para) in nb.paragraphs.iter_mut().enumerate() {
-            // Leading tabs set the outline level.
+            // Leading tabs set the outline level. From the outline view a line without tabs is
+            // first-level: otherwise a line promoted to level 1 (or one inserted above others)
+            // would take the level its paragraph number had before.
             if !apply_leading_tabs(para)
+                && !outline
                 && let Some((lv, pp)) = levels.get(i)
             {
                 para.level = *lv;
@@ -1293,7 +1297,9 @@ pub(crate) fn format_run(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + Sy
     if ids.is_empty() {
         return Err(bad("format", SELECT_TEXT_OR_SHAPE));
     }
+    let in_master = matches!(st.selection.target, Target::Master { .. } | Target::Layout { .. });
     edit_shapes(s, &json!({"ids": ids}), "format", |sh| {
+        let placeholder = sh.ph.is_some();
         match &mut sh.kind {
             ShapeKind::Table(t) => {
                 for row in &mut t.rows {
@@ -1304,6 +1310,12 @@ pub(crate) fn format_run(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + Sy
             }
             _ => {
                 let body = sh.text.get_or_insert_with(TextBody::default);
+                // A master or layout placeholder without sample text (a new master's date and
+                // footer) has no paragraph to hold the formatting, so it would be lost before
+                // `master_styles` moves it into the placeholder's list style; give it an empty one.
+                if in_master && placeholder && body.paragraphs.is_empty() {
+                    body.paragraphs.push(Paragraph::default());
+                }
                 ed::format_all(body, f);
             }
         }
@@ -1383,12 +1395,18 @@ pub(crate) fn format_para(s: &mut Session, f: &(dyn Fn(&mut deckcraft_model::tex
     if ids.is_empty() {
         return Err(bad("format", SELECT_TEXT_OR_SHAPE));
     }
+    // Selected cells of a table (dragged across): only those cells, not the whole table.
+    let cells = st.selection.cells;
     edit_shapes(s, &json!({"ids": ids}), "format", |sh| {
+        let id = sh.id;
         match &mut sh.kind {
             ShapeKind::Table(t) => {
-                for row in &mut t.rows {
-                    for c in &mut row.cells {
-                        c.text.paragraphs.iter_mut().for_each(f);
+                let range = cells.filter(|(tid, _, _)| *tid == id).map(|(_, a, b)| ((a.0.min(b.0), a.1.min(b.1)), (a.0.max(b.0), a.1.max(b.1))));
+                for (ri, row) in t.rows.iter_mut().enumerate() {
+                    for (ci, c) in row.cells.iter_mut().enumerate() {
+                        if range.is_none_or(|((r0, c0), (r1, c1))| (r0..=r1).contains(&ri) && (c0..=c1).contains(&ci)) {
+                            c.text.paragraphs.iter_mut().for_each(f);
+                        }
                     }
                 }
             }

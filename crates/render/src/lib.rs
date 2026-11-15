@@ -622,7 +622,10 @@ impl Renderer {
         let mut ctx = RenderContext::new_with(
             w,
             h,
-            vello_cpu::RenderSettings { num_threads: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) || filters { 0 } else { opts.threads }, ..Default::default() },
+            vello_cpu::RenderSettings {
+                num_threads: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) || filters { 0 } else { opts.threads },
+                ..Default::default()
+            },
         );
         if let Some(c) = opts.clear {
             ctx.set_paint(color(c, 1.0));
@@ -2003,6 +2006,16 @@ fn arrowheads(ctx: &mut RenderContext, rctx: &Ctx, line: &Line, ph: Option<Rgba>
     }
 }
 
+/// Translates the English prompt of an empty placeholder (`Click to add title`) for the
+/// interface language; set once by the UI ([`set_prompt_text`]). Unset, prompts stay English.
+static PROMPT_TEXT: std::sync::OnceLock<fn(&'static str) -> &'static str> = std::sync::OnceLock::new();
+
+/// Show placeholder prompts through `f` (the interface's translation). The first call wins: the
+/// interface language is fixed for the life of the process.
+pub fn set_prompt_text(f: fn(&'static str) -> &'static str) {
+    let _ = PROMPT_TEXT.set(f);
+}
+
 /// The prompt shown in an empty placeholder, formatted like its content would be.
 fn prompt_body(rctx: &Ctx, s: &Shape, kind: PhType) -> TextBody {
     // Layout/master prompt text when the layout supplies a custom one.
@@ -2014,7 +2027,7 @@ fn prompt_body(rctx: &Ctx, s: &Shape, kind: PhType) -> TextBody {
     if matches!(rctx.owner, resolve::Owner::Layout | resolve::Owner::Master) {
         return TextBody::default();
     }
-    let txt = kind.prompt();
+    let txt = PROMPT_TEXT.get().map_or(kind.prompt(), |f| f(kind.prompt()));
     if txt.is_empty() || kind.is_footer_kind() {
         return TextBody::default();
     }
