@@ -610,6 +610,15 @@ pub fn crop_dest(bounds: Rect, crop: [f64; 4]) -> Rect {
     Rect::new(bounds.x0 - l * fw, bounds.y0 - t * fh, bounds.x0 - l * fw + fw, bounds.y0 - t * fh + fh)
 }
 
+/// Settings for `num_threads` workers. Not through `RenderSettings::default()`: that asks
+/// `available_parallelism` for its own thread count on every call, which reads cgroup files on Linux
+/// (several milliseconds a frame on BrowserOS) only to be overridden here.
+pub(crate) fn render_settings(num_threads: u16) -> vello_cpu::RenderSettings {
+    use vello_common::fearless_simd::Level;
+    static LEVEL: std::sync::OnceLock<Level> = std::sync::OnceLock::new();
+    vello_cpu::RenderSettings { level: *LEVEL.get_or_init(|| Level::try_detect().unwrap_or(Level::baseline())), num_threads }
+}
+
 struct Frame<'a> {
     pres: &'a Presentation,
     opts: &'a RenderOpts<'a>,
@@ -622,10 +631,7 @@ impl Renderer {
         let mut ctx = RenderContext::new_with(
             w,
             h,
-            vello_cpu::RenderSettings {
-                num_threads: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) || filters { 0 } else { opts.threads },
-                ..Default::default()
-            },
+            render_settings(if cfg!(all(target_arch = "wasm32", target_os = "unknown")) || filters { 0 } else { opts.threads }),
         );
         if let Some(c) = opts.clear {
             ctx.set_paint(color(c, 1.0));
@@ -761,7 +767,7 @@ impl Renderer {
 
     fn layout(&mut self, pres: &Presentation, mi: usize, li: Option<usize>, opts: &RenderOpts) -> Image {
         let (w, h) = output_size(pres, opts);
-        let mut ctx = RenderContext::new_with(w, h, vello_cpu::RenderSettings { num_threads: 0, ..Default::default() });
+        let mut ctx = RenderContext::new_with(w, h, render_settings(0));
         let view = Affine::translate((opts.offset.0, opts.offset.1)) * Affine::scale(opts.scale);
         let f = Frame { pres, opts, fields: SlideFields::new(1, String::new(), opts) };
         if let Some(m) = pres.masters.get(mi) {
@@ -2347,7 +2353,7 @@ pub fn render_shapes(pres: &Presentation, slide: &Slide, ids: &[ShapeId], scale:
     }
     let w = (b.width() * fit).ceil().clamp(1.0, 2048.0) as u16;
     let h = (b.height() * fit).ceil().clamp(1.0, 2048.0) as u16;
-    let mut ctx = RenderContext::new_with(w, h, vello_cpu::RenderSettings { num_threads: 0, ..Default::default() });
+    let mut ctx = RenderContext::new_with(w, h, render_settings(0));
     let opts = RenderOpts { scale: fit, ..Default::default() };
     let f = Frame { pres, opts: &opts, fields: SlideFields::new(1, String::new(), &opts) };
     let view = Affine::scale(fit) * Affine::translate(-b.origin().to_vec2());
@@ -2368,7 +2374,7 @@ pub fn render_shape(pres: &Presentation, slide: &Slide, id: ShapeId, scale: f64)
     let b = x.bounds().inflate(8.0, 8.0);
     let w = (b.width() * scale).ceil().clamp(1.0, MAX_SIDE as f64) as u16;
     let h = (b.height() * scale).ceil().clamp(1.0, MAX_SIDE as f64) as u16;
-    let mut ctx = RenderContext::new_with(w, h, vello_cpu::RenderSettings { num_threads: 0, ..Default::default() });
+    let mut ctx = RenderContext::new_with(w, h, render_settings(0));
     let opts = RenderOpts { scale, ..Default::default() };
     let f = Frame { pres, opts: &opts, fields: SlideFields::new(1, String::new(), &opts) };
     let view = Affine::scale(scale) * Affine::translate(-b.origin().to_vec2());

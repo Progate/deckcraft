@@ -18,6 +18,9 @@ This branch builds DeckCraft for [BrowserOS](https://github.com/Progate/packages
   the render thread count is 0 for `target_arch = "wasm32"`, not only for the web. On BrowserOS
   (`wasm32-browseros-linux-musl`) `available_parallelism` reports the host's cores, and every render would start a new
   `vello_cpu` pool of that many threads, each a Web Worker that takes tens of milliseconds to start.
+- **`RenderSettings` without `Default`** (`crates/render/src/lib.rs`, `crates/render/src/metafile.rs`): vello_cpu's
+  `RenderSettings::default()` asks `available_parallelism` for a thread count on every call, which on Linux reads cgroup
+  files. The renderer builds its settings itself (`render_settings`), so a frame no longer pays for that only to override it.
 - **`parking_lot_core` waits with std's park / unpark on WASI** (`browseros/crates/parking_lot_core`, patched in
   through `[patch.crates-io]`). Upstream's wasm thread parker panics as soon as a lock is contended unless the
   nightly feature is on; the std of `wasm32-wasip1-threads` implements park / unpark with
