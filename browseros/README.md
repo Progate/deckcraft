@@ -14,6 +14,10 @@ This branch builds DeckCraft for [BrowserOS](https://github.com/Progate/packages
 - **WASI dropped-file read** (`crates/ui-egui/src/lib.rs`): egui's wasm `DroppedFile` exposes no `bytes()`, so the
   non-web arm that used it split in two — WASI reads the path with `std::fs::read`, native keeps `bytes()`, the
   browser keeps the inbox path.
+- **Slides render on the calling thread on any wasm** (`crates/ui-egui/src/textures.rs`, `crates/ui-egui/src/show.rs`):
+  the render thread count is 0 for `target_arch = "wasm32"`, not only for the web. On BrowserOS
+  (`wasm32-browseros-linux-musl`) `available_parallelism` reports the host's cores, and every render would start a new
+  `vello_cpu` pool of that many threads, each a Web Worker that takes tens of milliseconds to start.
 - **`parking_lot_core` waits with std's park / unpark on WASI** (`browseros/crates/parking_lot_core`, patched in
   through `[patch.crates-io]`). Upstream's wasm thread parker panics as soon as a lock is contended unless the
   nightly feature is on; the std of `wasm32-wasip1-threads` implements park / unpark with

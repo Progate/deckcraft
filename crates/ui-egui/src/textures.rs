@@ -240,8 +240,10 @@ fn anim_key(anim: Option<(&deckcraft_anim::Timeline, f64)>) -> u64 {
     ms.wrapping_add(1).wrapping_mul(0x9E37_79B9_7F4A_7C15)
 }
 
+/// Render worker threads. None on wasm: the web has no threads, and on BrowserOS every render would start
+/// a pool of new threads (a Web Worker each), which costs far more than the frame it shares.
 fn threads() -> u16 {
-    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
+    if cfg!(target_arch = "wasm32") { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) }
 }
 
 impl Textures {

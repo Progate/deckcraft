@@ -89,8 +89,9 @@ struct Prefetch {
     rx: std::sync::mpsc::Receiver<egui::ColorImage>,
 }
 
+/// Render worker threads; none on wasm (→ `textures::threads`).
 fn render_threads() -> u16 {
-    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+    if cfg!(target_arch = "wasm32") {
         0
     } else {
         std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0)
@@ -410,7 +411,7 @@ fn quad_mesh(tex: Option<egui::TextureId>, rect: Rect, l: &Layer, color: Color32
 /// Render the backgrounds and contents of a transition's two slides into textures, once.
 fn part_textures(ctx: &egui::Context, doc: &Presentation, from: Option<usize>, to: usize, size: (u32, u32)) -> [Option<TextureHandle>; 4] {
     use deckcraft_render::SlidePart;
-    let threads = if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+    let threads = if cfg!(target_arch = "wasm32") {
         0
     } else {
         std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0)
@@ -777,7 +778,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         };
         if let (Some((from, m)), Some(tr)) = (morph, show.trans.as_mut()) {
             let f = |id: ShapeId| ShapeState { opacity: m.opacity_of(id), ..Default::default() };
-            let threads = if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+            let threads = if cfg!(target_arch = "wasm32") {
                 0
             } else {
                 std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0)
